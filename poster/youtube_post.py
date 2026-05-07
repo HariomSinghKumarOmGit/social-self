@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 async def post_to_youtube(video_path: str, title: str, description: str) -> Dict[str, str]:
-    """Upload a video to YouTube Studio and publish it."""
+    """Upload a video to YouTube Studio and publish it using persistent session."""
     poster = BrowserPoster(platform="youtube", headless=False)
     try:
         await poster.start()
@@ -53,7 +53,6 @@ async def post_to_youtube(video_path: str, title: str, description: str) -> Dict
         await poster.human_delay()
         await poster.page.get_by_role("button", name="Publish").click()
         await poster.human_delay(2500, 4500)
-        await poster.save_session()
         return post_result(True, post_url="https://studio.youtube.com/")
     except Exception as exc:
         logger.exception("YouTube posting failed.")

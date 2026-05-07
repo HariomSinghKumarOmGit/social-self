@@ -2,3 +2,12 @@
 __pycache__/
 *.pyc
 agent.db
+
+# Playwright persistent browser sessions (contain auth tokens)
+sessions/instagram/
+sessions/twitter/
+sessions/youtube/
+
+# Debug screenshots & logs
+logs/*.png
+logs/*.log

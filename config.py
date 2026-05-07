@@ -11,9 +11,20 @@ from dotenv import load_dotenv
 load_dotenv()
 
 ACCOUNTS: Dict[str, List[str]] = {
-    "instagram": [f"instagram_user_{i:02d}" for i in range(1, 21)],
-    "twitter": [f"twitter_user_{i:02d}" for i in range(1, 21)],
-    "youtube": [f"youtube_user_{i:02d}" for i in range(1, 21)],
+    "instagram": [
+        "codeandcomplexity",
+        # Add more Instagram usernames to monitor:
+        # "therock", "selenagomez", etc.
+    ],
+    "twitter": [
+        "PratikSinhatwt",
+        # Add more Twitter/X usernames to monitor:
+        # "elonmusk", "naval", etc.
+    ],
+    "youtube": [
+        # Add YouTube usernames or channel handles to monitor:
+        # "mkbhd", "veritasium", etc.
+    ],
 }
 
 TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")

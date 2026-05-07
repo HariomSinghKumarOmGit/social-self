@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 async def post_to_twitter(text: str, media_path: Optional[str] = None) -> Dict[str, str]:
-    """Post a tweet with optional media attachment."""
+    """Post a tweet with optional media attachment using persistent session."""
     poster = BrowserPoster(platform="twitter", headless=False)
     try:
         await poster.start()
@@ -36,7 +36,6 @@ async def post_to_twitter(text: str, media_path: Optional[str] = None) -> Dict[s
 
         await poster.page.locator('[data-testid="tweetButton"]').first.click()
         await poster.human_delay(2500, 4000)
-        await poster.save_session()
         return post_result(True, post_url="https://x.com/home")
     except Exception as exc:
         logger.exception("Twitter posting failed.")

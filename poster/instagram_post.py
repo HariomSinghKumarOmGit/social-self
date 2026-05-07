@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 async def post_to_instagram(image_path: str, caption: str) -> Dict[str, str]:
-    """Upload an image post to Instagram Web."""
+    """Upload an image post to Instagram Web using persistent session."""
     poster = BrowserPoster(platform="instagram", headless=False)
     try:
         await poster.start()
@@ -41,7 +41,6 @@ async def post_to_instagram(image_path: str, caption: str) -> Dict[str, str]:
         await poster.human_delay()
         await poster.page.get_by_role("button", name="Share").click()
         await poster.human_delay(2500, 4500)
-        await poster.save_session()
         return post_result(True)
     except Exception as exc:
         logger.exception("Instagram posting failed.")

@@ -4,86 +4,73 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from playwright.async_api import Browser, BrowserContext, Page, async_playwright
+from playwright.async_api import BrowserContext, Page, Playwright, async_playwright
 
 logger = logging.getLogger(__name__)
 
-SESSIONS_DIR = Path("sessions")
+SESSIONS_ROOT = Path(__file__).resolve().parent.parent / "sessions"
 LOGS_DIR = Path("logs")
 
 
 @dataclass
 class BrowserPoster:
-    """Shared Playwright wrapper with cookie/session helpers."""
+    """Shared Playwright wrapper using persistent browser context.
+
+    Instead of saving/loading cookies, this uses Playwright's
+    ``launch_persistent_context`` which preserves the full browser state
+    (cookies, localStorage, IndexedDB, service workers, etc.) across runs.
+    """
 
     platform: str
     headless: bool = False
     viewport_width: int = 1280
     viewport_height: int = 800
 
-    _playwright: Any = None
-    _browser: Optional[Browser] = None
-    context: Optional[BrowserContext] = None
-    page: Optional[Page] = None
+    _playwright: Optional[Playwright] = field(default=None, repr=False)
+    context: Optional[BrowserContext] = field(default=None, repr=False)
+    page: Optional[Page] = field(default=None, repr=False)
 
     async def start(self) -> None:
-        """Start Playwright, browser, and a single page context."""
-        SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+        """Start Playwright with a persistent browser context for the platform."""
+        profile_dir = SESSIONS_ROOT / self.platform
+        profile_dir.mkdir(parents=True, exist_ok=True)
         LOGS_DIR.mkdir(parents=True, exist_ok=True)
+
         self._playwright = await async_playwright().start()
-        self._browser = await self._playwright.chromium.launch(headless=self.headless)
-        self.context = await self._browser.new_context(
+
+        self.context = await self._playwright.chromium.launch_persistent_context(
+            user_data_dir=str(profile_dir),
+            headless=self.headless,
             viewport={"width": self.viewport_width, "height": self.viewport_height},
             user_agent=(
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
             ),
+            locale="en-US",
+            timezone_id="Asia/Kolkata",
+            permissions=["notifications"],
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+            ],
+            ignore_default_args=["--enable-automation"],
         )
-        await self.load_session()
-        self.page = await self.context.new_page()
+        # Reuse existing tab or open a new one
+        self.page = self.context.pages[0] if self.context.pages else await self.context.new_page()
 
     async def close(self) -> None:
         """Close browser resources gracefully."""
         if self.context:
             await self.context.close()
-        if self._browser:
-            await self._browser.close()
         if self._playwright:
             await self._playwright.stop()
-
-    @property
-    def _cookie_path(self) -> Path:
-        """Return platform cookie file path."""
-        return SESSIONS_DIR / f"{self.platform}_cookies.json"
-
-    async def save_session(self) -> None:
-        """Persist current context cookies for future runs."""
-        if not self.context:
-            return
-        cookies = await self.context.cookies()
-        self._cookie_path.write_text(json.dumps(cookies, indent=2), encoding="utf-8")
-        logger.info("Saved %s session cookies.", self.platform)
-
-    async def load_session(self) -> bool:
-        """Load persisted cookies into context if present."""
-        if not self.context or not self._cookie_path.exists():
-            return False
-        try:
-            cookies = json.loads(self._cookie_path.read_text(encoding="utf-8"))
-            await self.context.add_cookies(cookies)
-            logger.info("Loaded saved %s session.", self.platform)
-            return True
-        except (OSError, json.JSONDecodeError):
-            logger.exception("Failed loading %s cookies.", self.platform)
-            return False
 
     async def human_delay(self, low_ms: int = 1000, high_ms: int = 3000) -> None:
         """Wait random delay to look less bot-like."""
@@ -101,22 +88,30 @@ class BrowserPoster:
     async def ensure_login(
         self, base_url: str, logged_in_selector: str, login_help_text: str
     ) -> None:
-        """
-        Navigate and ensure user is logged in.
+        """Navigate and verify user is logged in via persistent session.
 
-        First run is expected to require manual login in visible browser mode.
+        Since sessions are now persistent (full browser profile), re-login
+        should be very rare. If session has expired, the user will be
+        prompted to re-run:  python -m sessions.login_setup <platform>
         """
         if not self.page:
             raise RuntimeError("Browser not started.")
         await self.page.goto(base_url, wait_until="domcontentloaded")
         await self.human_delay()
         try:
-            await self.page.locator(logged_in_selector).first.wait_for(timeout=5000)
-            return
+            await self.page.locator(logged_in_selector).first.wait_for(timeout=10_000)
+            logger.info("✅ %s session is active.", self.platform)
         except Exception:
-            logger.info("%s", login_help_text)
-            await self.page.pause()
-            await self.save_session()
+            logger.warning(
+                "❌ %s session expired or not set up. "
+                "Run:  python -m sessions.login_setup %s",
+                self.platform,
+                self.platform,
+            )
+            raise RuntimeError(
+                f"{self.platform} session not valid. "
+                f"Run:  python -m sessions.login_setup {self.platform}"
+            )
 
 
 def post_result(success: bool, post_url: str = "", error: str = "") -> Dict[str, str]:
