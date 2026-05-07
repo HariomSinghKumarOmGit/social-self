@@ -6,7 +6,6 @@ from __future__ import annotations
 import logging
 import sqlite3
 from contextlib import closing
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -47,7 +46,13 @@ def init_db() -> None:
                         platform TEXT NOT NULL,
                         author TEXT NOT NULL,
                         content TEXT NOT NULL,
+                        post_url TEXT,
                         media_url TEXT,
+                        likes INTEGER NOT NULL DEFAULT 0,
+                        comments INTEGER NOT NULL DEFAULT 0,
+                        shares INTEGER NOT NULL DEFAULT 0,
+                        saves INTEGER NOT NULL DEFAULT 0,
+                        views INTEGER NOT NULL DEFAULT 0,
                         engagement_score REAL NOT NULL DEFAULT 0,
                         status TEXT NOT NULL DEFAULT 'pending',
                         scheduled_time TEXT,
@@ -69,17 +74,50 @@ def init_db() -> None:
                     ON posts (scheduled_time)
                     """
                 )
+                _ensure_posts_columns(conn)
         logger.info("Database initialized at %s", DB_PATH.resolve())
     except sqlite3.Error:
         logger.exception("Failed to initialize database.")
         raise
 
 
+def _ensure_posts_columns(conn: sqlite3.Connection) -> None:
+    """Ensure new posts columns exist for backward compatibility."""
+    existing_columns = {
+        row[1]
+        for row in conn.execute(
+            """
+            PRAGMA table_info(posts)
+            """
+        ).fetchall()
+    }
+    required_columns = {
+        "post_url": "TEXT",
+        "likes": "INTEGER NOT NULL DEFAULT 0",
+        "comments": "INTEGER NOT NULL DEFAULT 0",
+        "shares": "INTEGER NOT NULL DEFAULT 0",
+        "saves": "INTEGER NOT NULL DEFAULT 0",
+        "views": "INTEGER NOT NULL DEFAULT 0",
+    }
+    for column_name, column_sql in required_columns.items():
+        if column_name not in existing_columns:
+            alter_statement = "ALTER TABLE posts ADD COLUMN " + column_name + " " + column_sql
+            conn.execute(
+                alter_statement
+            )
+
+
 def save_post(
     platform: str,
     author: str,
     content: str,
+    post_url: Optional[str] = None,
     media_url: Optional[str] = None,
+    likes: int = 0,
+    comments: int = 0,
+    shares: int = 0,
+    saves: int = 0,
+    views: int = 0,
     engagement_score: float = 0.0,
 ) -> int:
     """Insert a pending post and return the newly created post ID."""
@@ -93,20 +131,32 @@ def save_post(
                         platform,
                         author,
                         content,
+                        post_url,
                         media_url,
+                        likes,
+                        comments,
+                        shares,
+                        saves,
+                        views,
                         engagement_score,
                         status,
                         scheduled_time,
                         created_at,
                         updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         platform,
                         author,
                         content,
+                        post_url,
                         media_url,
+                        likes,
+                        comments,
+                        shares,
+                        saves,
+                        views,
                         engagement_score,
                         STATUS_PENDING,
                         None,
