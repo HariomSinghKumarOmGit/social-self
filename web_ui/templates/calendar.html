@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Social Agent Dashboard</title>
+  <link rel="stylesheet" href="../static/style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="left-rail">
+      <div class="brand">Social Agent</div>
+      <div class="rail-block">
+        <div class="block-title">Add Account</div>
+        <form id="accountForm" class="stack">
+          <select id="accountType">
+            <option value="source">Source</option>
+            <option value="posting">Posting</option>
+          </select>
+          <select id="platform">
+            <option value="instagram">Instagram</option>
+            <option value="twitter">Twitter</option>
+            <option value="youtube">YouTube</option>
+          </select>
+          <input id="username" placeholder="username or channel handle" required>
+          <button type="submit">Add account</button>
+        </form>
+      </div>
+      <div class="rail-block">
+        <div class="block-title">Source Accounts</div>
+        <div id="sourceAccounts"></div>
+      </div>
+      <div class="rail-block">
+        <div class="block-title">Posting Accounts</div>
+        <div id="postingAccounts"></div>
+      </div>
+    </aside>
+
+    <main class="center-panel">
+      <header class="calendar-top">
+        <div>
+          <h1 class="month-label" id="monthLabel">Month</h1>
+          <p class="subtle">Schedule and shortlist from one place</p>
+        </div>
+        <div class="top-actions">
+          <input id="searchInput" placeholder="Search posts">
+          <select id="platformFilter">
+            <option value="">All platforms</option>
+            <option value="instagram">Instagram</option>
+            <option value="twitter">Twitter</option>
+            <option value="youtube">YouTube</option>
+          </select>
+          <div class="status-pill" id="statusBadge">Loading...</div>
+        </div>
+      </header>
+      <section class="calendar-wrap">
+        <div class="weekday-row">
+          <div>Monday</div><div>Tuesday</div><div>Wednesday</div><div>Thursday</div>
+          <div>Friday</div><div>Saturday</div><div>Sunday</div>
+        </div>
+        <div class="calendar-grid" id="calendarGrid"></div>
+      </section>
+    </main>
+
+    <aside class="right-panel">
+      <div class="composer panel-card">
+        <h2>Create Post</h2>
+        <textarea id="composeText" placeholder="Write something..."></textarea>
+        <input id="composeTarget" placeholder="target posting account (e.g. @brand_main)">
+        <div class="row">
+          <button id="composeScheduleBtn" type="button">Save Draft</button>
+          <button id="composePublishBtn" type="button">Publish Now</button>
+        </div>
+      </div>
+      <div class="panel-card">
+        <h2>Post Preview</h2>
+        <div id="previewBox" class="preview-box">No post selected</div>
+      </div>
+    </aside>
+  </div>
+
+  <script>
+    async function fetchJson(url, options) {
+      const res = await fetch(url, options);
+      return res.json();
+    }
+    let scheduledPosts = [];
+
+    async function loadStatus() {
+      const data = await fetchJson('/api/status');
+      document.getElementById('statusBadge').textContent = `Scheduled: ${data.scheduled_count}`;
+    }
+
+    async function loadScheduled() {
+      scheduledPosts = await fetchJson('/api/scheduled');
+      renderCalendar();
+    }
+
+    function renderAccounts(containerId, accounts) {
+      const el = document.getElementById(containerId);
+      el.innerHTML = '';
+      if (!accounts.length) {
+        el.textContent = 'None';
+        return;
+      }
+      accounts.forEach((a) => {
+        const row = document.createElement('div');
+        row.className = 'account-row';
+        row.innerHTML = `<span>${a.platform} @${a.username}</span><button data-id="${a.id}">x</button>`;
+        row.querySelector('button').onclick = async () => {
+          await fetchJson('/api/accounts/delete', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({id: a.id})
+          });
+          await loadAccounts();
+        };
+        el.appendChild(row);
+      });
+    }
+
+    function toDateSafe(value) {
+      if (!value) return null;
+      const parsed = new Date(value);
+      if (!Number.isNaN(parsed.valueOf())) return parsed;
+      const today = new Date();
+      if (/^\d{2}:\d{2}$/.test(value)) {
+        const [h, m] = value.split(':').map(Number);
+        return new Date(today.getFullYear(), today.getMonth(), today.getDate(), h, m, 0, 0);
+      }
+      return null;
+    }
+
+    function getMonday(date) {
+      const d = new Date(date);
+      const day = (d.getDay() + 6) % 7;
+      d.setDate(d.getDate() - day);
+      d.setHours(0, 0, 0, 0);
+      return d;
+    }
+
+    function renderCalendar() {
+      const grid = document.getElementById('calendarGrid');
+      grid.innerHTML = '';
+      const now = new Date();
+      document.getElementById('monthLabel').textContent =
+        now.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const start = getMonday(monthStart);
+      const search = document.getElementById('searchInput').value.toLowerCase().trim();
+      const platformFilter = document.getElementById('platformFilter').value;
+
+      for (let i = 0; i < 35; i += 1) {
+        const day = new Date(start);
+        day.setDate(start.getDate() + i);
+        const cell = document.createElement('div');
+        cell.className = 'day-cell';
+        cell.innerHTML = `<div class="day-number">${day.getDate()}</div>`;
+
+        scheduledPosts
+          .filter((p) => !platformFilter || (p.platform || '').toLowerCase() === platformFilter)
+          .filter((p) => !search || (p.content || '').toLowerCase().includes(search))
+          .forEach((p) => {
+            const dt = toDateSafe(p.scheduled_time) || toDateSafe(p.created_at);
+            if (!dt) return;
+            if (
+              dt.getFullYear() === day.getFullYear() &&
+              dt.getMonth() === day.getMonth() &&
+              dt.getDate() === day.getDate()
+            ) {
+              const chip = document.createElement('button');
+              chip.type = 'button';
+              chip.className = `post-chip ${(p.platform || '').toLowerCase()}`;
+              chip.textContent = `${(p.scheduled_time || '').slice(0, 5) || 'queued'} | @${p.author}`;
+              chip.onclick = () => showPostDetails(p);
+              cell.appendChild(chip);
+            }
+          });
+        grid.appendChild(cell);
+      }
+    }
+
+    function showPostDetails(p) {
+      const preview = document.getElementById('previewBox');
+      preview.innerHTML = `
+        <div><strong>${p.platform}</strong> @${p.author}</div>
+        <div class="subtle">Score ${Number(p.engagement_score || 0).toFixed(2)}</div>
+        <p>${(p.content || '').slice(0, 260)}</p>
+        <div class="row">
+          <input id="target-${p.id}" placeholder="target posting account" value="${p.target_account || ''}">
+          <button id="save-${p.id}" type="button">Save Target</button>
+          <button id="post-${p.id}" type="button">Post Now</button>
+        </div>
+      `;
+      document.getElementById(`save-${p.id}`).onclick = async () => {
+        const val = document.getElementById(`target-${p.id}`).value.trim();
+        await fetchJson('/api/posts/target-account', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({post_id: Number(p.id), target_account: val})
+        });
+        await loadScheduled();
+      };
+      document.getElementById(`post-${p.id}`).onclick = async () => {
+        await fetchJson('/api/post-now', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({post_id: Number(p.id)})
+        });
+        await loadScheduled();
+        await loadStatus();
+      };
+    }
+
+    async function loadAccounts() {
+      const data = await fetchJson('/api/accounts');
+      renderAccounts('sourceAccounts', data.source || []);
+      renderAccounts('postingAccounts', data.posting || []);
+    }
+
+    document.getElementById('accountForm').onsubmit = async (e) => {
+      e.preventDefault();
+      await fetchJson('/api/accounts/add', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          account_type: document.getElementById('accountType').value,
+          platform: document.getElementById('platform').value,
+          username: document.getElementById('username').value.trim()
+        })
+      });
+      document.getElementById('username').value = '';
+      await loadAccounts();
+    };
+    document.getElementById('searchInput').oninput = renderCalendar;
+    document.getElementById('platformFilter').onchange = renderCalendar;
+    document.getElementById('composeText').oninput = () => {
+      const preview = document.getElementById('previewBox');
+      if (preview.textContent === 'No post selected') {
+        preview.textContent = document.getElementById('composeText').value || 'No post selected';
+      }
+    };
+    document.getElementById('composeScheduleBtn').onclick = () => alert('Draft saved locally in UI.');
+    document.getElementById('composePublishBtn').onclick = () => alert('Use a scheduled card and Post Now for real posting flow.');
+
+    (async function init() {
+      await loadStatus();
+      await loadScheduled();
+      await loadAccounts();
+    })();
+  </script>
+</body>
+</html>
