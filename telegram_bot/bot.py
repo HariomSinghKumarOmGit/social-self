@@ -1,7 +1,9 @@
 # Module: telegram_bot | Purpose: Bootstrap and run Telegram moderation bot.
-# Public API: build_application, run_bot
+# Public API: build_application, run_bot, run_bot_in_thread
 
 from __future__ import annotations
+
+import asyncio
 
 import logging
 import sys
@@ -42,10 +44,39 @@ def build_application() -> Application:
 
 
 def run_bot() -> None:
-    """Start long-polling bot process."""
+    """Start long-polling bot process (main thread only — uses signal handlers)."""
     application = build_application()
     logger.info("Telegram bot started in polling mode.")
     application.run_polling(drop_pending_updates=True)
+
+
+def run_bot_in_thread() -> None:
+    """
+    Start the bot in a non-main thread.
+
+    python-telegram-bot's run_polling() installs signal handlers which
+    require the main thread.  This helper manually drives the async
+    lifecycle so it works from any daemon thread.
+    """
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    application = build_application()
+
+    async def _run() -> None:
+        await application.initialize()
+        await application.start()
+        await application.updater.start_polling(drop_pending_updates=True)
+        logger.info("Telegram bot started (thread-safe polling).")
+        # Block forever until the loop is stopped externally
+        stop_event = asyncio.Event()
+        await stop_event.wait()
+
+    try:
+        loop.run_until_complete(_run())
+    except (KeyboardInterrupt, SystemExit):
+        pass
+    finally:
+        loop.close()
 
 
 if __name__ == "__main__":
