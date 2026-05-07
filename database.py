@@ -1,5 +1,5 @@
 # Module: database | Purpose: SQLite storage and post state transitions.
-# Public API: init_db, save_post, get_pending, approve_post, reject_post, get_scheduled, mark_posted
+# Public API: init_db, save_post, get_pending, get_post_by_id, approve_post, reject_post, get_scheduled, mark_posted
 
 from __future__ import annotations
 
@@ -192,6 +192,24 @@ def get_pending() -> List[Dict[str, Any]]:
         return _rows_to_dicts(rows)
     except sqlite3.Error:
         logger.exception("Failed to fetch pending posts.")
+        raise
+
+
+def get_post_by_id(post_id: int) -> Optional[Dict[str, Any]]:
+    """Return a single post dictionary by ID, or None when not found."""
+    try:
+        with closing(_get_connection()) as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM posts
+                WHERE id = ?
+                LIMIT 1
+                """,
+                (post_id,),
+            ).fetchone()
+        return dict(row) if row else None
+    except sqlite3.Error:
+        logger.exception("Failed to fetch post %s.", post_id)
         raise
 
 
