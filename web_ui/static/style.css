@@ -5,6 +5,58 @@ body {
   background: #0d1018;
   color: #e6edf3;
 }
+
+/* ── Top Nav (shared with Feed) ── */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: rgba(15, 20, 32, 0.82);
+  border-bottom: 1px solid #1f2937;
+  backdrop-filter: blur(12px);
+}
+.topbar-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  gap: 12px;
+}
+.topbar-brand {
+  margin: 0;
+}
+.topbar-brand span {
+  color: #4f8ff7;
+}
+.nav-links {
+  display: flex;
+  gap: 6px;
+}
+.nav-links a {
+  color: #91a4c2;
+  text-decoration: none;
+  padding: 7px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+  border: 1px solid transparent;
+}
+.nav-links a:hover,
+.nav-links a.active {
+  background: rgba(79, 143, 247, 0.14);
+  color: #4f8ff7;
+  border-color: rgba(79, 143, 247, 0.35);
+}
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.topbar-badge {
+  font-size: 12px;
+  color: #8ca0bf;
+}
 .app-shell {
   display: grid;
   grid-template-columns: 240px 1fr 320px;

@@ -1,5 +1,7 @@
 # Module: database | Purpose: SQLite storage and post state transitions.
-# Public API: init_db, save_post, get_pending, get_post_by_id, approve_post, reject_post, get_scheduled, mark_posted, get_managed_accounts, add_managed_account, delete_managed_account, set_target_account
+# Public API: init_db, save_post, get_pending, get_post_by_id, approve_post, reject_post, get_scheduled, mark_posted, get_posts_feed,
+#             get_managed_accounts, add_managed_account, delete_managed_account, set_target_account,
+#             get_default_time, set_default_time, format_time_display, get_time_slots, get_preferences
 
 from __future__ import annotations
 
@@ -9,6 +11,8 @@ from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+from config import POST_TIMES
 
 DB_PATH = Path("agent.db")
 
@@ -55,6 +59,7 @@ def init_db() -> None:
                         views INTEGER NOT NULL DEFAULT 0,
                         engagement_score REAL NOT NULL DEFAULT 0,
                         status TEXT NOT NULL DEFAULT 'pending',
+                        scheduled_date TEXT,
                         scheduled_time TEXT,
                         target_account TEXT,
                         created_at TEXT NOT NULL,
@@ -77,6 +82,15 @@ def init_db() -> None:
                 )
                 conn.execute(
                     """
+                    CREATE TABLE IF NOT EXISTS user_preferences (
+                        key TEXT PRIMARY KEY,
+                        value TEXT,
+                        updated_at TEXT NOT NULL
+                    )
+                    """
+                )
+                conn.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS managed_accounts (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         account_type TEXT NOT NULL,
@@ -89,6 +103,7 @@ def init_db() -> None:
                     """
                 )
                 _ensure_posts_columns(conn)
+                _backfill_scheduled_date(conn)
         logger.info("Database initialized at %s", DB_PATH.resolve())
     except sqlite3.Error:
         logger.exception("Failed to initialize database.")
@@ -113,6 +128,7 @@ def _ensure_posts_columns(conn: sqlite3.Connection) -> None:
         "saves": "INTEGER NOT NULL DEFAULT 0",
         "views": "INTEGER NOT NULL DEFAULT 0",
         "target_account": "TEXT",
+        "scheduled_date": "TEXT",
     }
     for column_name, column_sql in required_columns.items():
         if column_name not in existing_columns:
@@ -120,6 +136,141 @@ def _ensure_posts_columns(conn: sqlite3.Connection) -> None:
             conn.execute(
                 alter_statement
             )
+
+
+def _backfill_scheduled_date(conn: sqlite3.Connection) -> None:
+    """
+    Backfill scheduled_date for older rows where only scheduled_time was stored.
+
+    We prefer the date component of created_at when available; otherwise today (UTC).
+    """
+    try:
+        today = datetime.now(timezone.utc).date().isoformat()
+        conn.execute(
+            """
+            UPDATE posts
+            SET scheduled_date = COALESCE(substr(created_at, 1, 10), ?)
+            WHERE status = ? AND scheduled_time IS NOT NULL AND scheduled_date IS NULL
+            """,
+            (today, STATUS_APPROVED),
+        )
+    except sqlite3.Error:
+        logger.exception("Failed to backfill scheduled_date.")
+        raise
+
+
+# ---------------------------------------------------------------------------
+# Preferences (smart default scheduling)
+# ---------------------------------------------------------------------------
+
+
+PREF_DEFAULT_POST_TIME = "default_post_time"
+
+
+def get_preferences() -> Dict[str, str]:
+    """Return all user preferences as a key/value mapping."""
+    try:
+        with closing(_get_connection()) as conn:
+            rows = conn.execute(
+                """
+                SELECT key, value FROM user_preferences
+                """
+            ).fetchall()
+        return {str(r["key"]): str(r["value"]) for r in rows}
+    except sqlite3.Error:
+        logger.exception("Failed to fetch preferences.")
+        raise
+
+
+def get_default_time() -> str:
+    """Returns stored default time, or '19:00' if not set yet."""
+    try:
+        with closing(_get_connection()) as conn:
+            row = conn.execute(
+                """
+                SELECT value FROM user_preferences
+                WHERE key = ?
+                LIMIT 1
+                """,
+                (PREF_DEFAULT_POST_TIME,),
+            ).fetchone()
+        value = str(row["value"]) if row and row["value"] else ""
+        return value if _is_hhmm(value) else "19:00"
+    except sqlite3.Error:
+        logger.exception("Failed to read default time preference.")
+        raise
+
+
+def set_default_time(time_24hr: str) -> None:
+    """Saves new default time. Called every time user confirms a schedule."""
+    if not _is_hhmm(time_24hr):
+        raise ValueError("time_24hr must be HH:MM in 24h format")
+    now = _utc_now_iso()
+    try:
+        with closing(_get_connection()) as conn:
+            with conn:
+                conn.execute(
+                    """
+                    INSERT INTO user_preferences (key, value, updated_at)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(key) DO UPDATE SET
+                        value = excluded.value,
+                        updated_at = excluded.updated_at
+                    """,
+                    (PREF_DEFAULT_POST_TIME, time_24hr, now),
+                )
+    except sqlite3.Error:
+        logger.exception("Failed to set default time preference.")
+        raise
+
+
+def format_time_display(time_24hr: str) -> str:
+    """Converts '19:00' → '7:00 PM' for display."""
+    if not _is_hhmm(time_24hr):
+        return time_24hr
+    h, m = [int(x) for x in time_24hr.split(":")]
+    suffix = "AM" if h < 12 else "PM"
+    h12 = h % 12
+    if h12 == 0:
+        h12 = 12
+    return f"{h12}:{m:02d} {suffix}"
+
+
+def get_time_slots() -> List[Dict[str, object]]:
+    """
+    Returns all available time slots from config.POST_TIMES,
+    with the default time marked.
+    Default slot is always first in the list.
+    """
+    default_time = get_default_time()
+    slots = []
+    seen = set()
+    all_times = [default_time] + list(POST_TIMES or [])
+    for t in all_times:
+        if not _is_hhmm(t) or t in seen:
+            continue
+        seen.add(t)
+        slots.append(
+            {
+                "time": t,
+                "display": format_time_display(t),
+                "is_default": t == default_time,
+            }
+        )
+    return slots
+
+
+def _is_hhmm(value: str) -> bool:
+    if not isinstance(value, str):
+        return False
+    if len(value) != 5 or value[2] != ":":
+        return False
+    hh, mm = value.split(":", 1)
+    if not (hh.isdigit() and mm.isdigit()):
+        return False
+    h = int(hh)
+    m = int(mm)
+    return 0 <= h <= 23 and 0 <= m <= 59
 
 
 def save_post(
@@ -155,11 +306,12 @@ def save_post(
                         views,
                         engagement_score,
                         status,
+                        scheduled_date,
                         scheduled_time,
                         created_at,
                         updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         platform,
@@ -174,6 +326,7 @@ def save_post(
                         views,
                         engagement_score,
                         STATUS_PENDING,
+                        None,
                         None,
                         created_at,
                         created_at,
@@ -229,7 +382,20 @@ def get_post_by_id(post_id: int) -> Optional[Dict[str, Any]]:
 
 
 def approve_post(post_id: int, scheduled_time: str) -> bool:
-    """Mark a pending post as approved and set the scheduled time."""
+    """
+    Mark a pending post as approved and set the scheduled time (backward compatible).
+
+    This older API sets schedule for *today* in UTC.
+    Prefer schedule_post(post_id, scheduled_date, scheduled_time).
+    """
+    today = datetime.now(timezone.utc).date().isoformat()
+    return schedule_post(post_id=post_id, scheduled_date=today, scheduled_time=scheduled_time)
+
+
+def schedule_post(post_id: int, scheduled_date: str, scheduled_time: str) -> bool:
+    """Schedule a pending post by setting date+time and marking it approved."""
+    if not _is_hhmm(scheduled_time):
+        raise ValueError("scheduled_time must be HH:MM in 24h format")
     updated_at = _utc_now_iso()
     try:
         with closing(_get_connection()) as conn:
@@ -237,11 +403,12 @@ def approve_post(post_id: int, scheduled_time: str) -> bool:
                 cursor = conn.execute(
                     """
                     UPDATE posts
-                    SET status = ?, scheduled_time = ?, updated_at = ?
+                    SET status = ?, scheduled_date = ?, scheduled_time = ?, updated_at = ?
                     WHERE id = ? AND status = ?
                     """,
                     (
                         STATUS_APPROVED,
+                        scheduled_date,
                         scheduled_time,
                         updated_at,
                         post_id,
@@ -250,12 +417,42 @@ def approve_post(post_id: int, scheduled_time: str) -> bool:
                 )
         changed = cursor.rowcount > 0
         if changed:
-            logger.info("Approved post %s for %s", post_id, scheduled_time)
+            logger.info("Scheduled post %s for %s %s", post_id, scheduled_date, scheduled_time)
         else:
-            logger.warning("Post %s was not approved (missing or not pending).", post_id)
+            logger.warning("Post %s was not scheduled (missing or not pending).", post_id)
         return changed
     except sqlite3.Error:
-        logger.exception("Failed to approve post %s", post_id)
+        logger.exception("Failed to schedule post %s", post_id)
+        raise
+
+
+def reschedule_post(post_id: int, scheduled_date: str, scheduled_time: str) -> bool:
+    """Reschedule an already-approved post (or schedule a pending one) to a new date+time."""
+    if not _is_hhmm(scheduled_time):
+        raise ValueError("scheduled_time must be HH:MM in 24h format")
+    updated_at = _utc_now_iso()
+    try:
+        with closing(_get_connection()) as conn:
+            with conn:
+                cursor = conn.execute(
+                    """
+                    UPDATE posts
+                    SET status = ?, scheduled_date = ?, scheduled_time = ?, updated_at = ?
+                    WHERE id = ? AND status IN (?, ?)
+                    """,
+                    (
+                        STATUS_APPROVED,
+                        scheduled_date,
+                        scheduled_time,
+                        updated_at,
+                        post_id,
+                        STATUS_PENDING,
+                        STATUS_APPROVED,
+                    ),
+                )
+        return cursor.rowcount > 0
+    except sqlite3.Error:
+        logger.exception("Failed to reschedule post %s", post_id)
         raise
 
 
@@ -291,14 +488,30 @@ def get_scheduled() -> List[Dict[str, Any]]:
             rows = conn.execute(
                 """
                 SELECT * FROM posts
-                WHERE status = ? AND scheduled_time IS NOT NULL
-                ORDER BY scheduled_time ASC
+                WHERE status = ? AND scheduled_date IS NOT NULL AND scheduled_time IS NOT NULL
+                ORDER BY scheduled_date ASC, scheduled_time ASC
                 """,
                 (STATUS_APPROVED,),
             ).fetchall()
         return _rows_to_dicts(rows)
     except sqlite3.Error:
         logger.exception("Failed to fetch scheduled posts.")
+        raise
+
+
+def get_posts_feed() -> List[Dict[str, Any]]:
+    """Return all posts for the feed UI (newest first)."""
+    try:
+        with closing(_get_connection()) as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM posts
+                ORDER BY created_at DESC
+                """
+            ).fetchall()
+        return _rows_to_dicts(rows)
+    except sqlite3.Error:
+        logger.exception("Failed to fetch feed posts.")
         raise
 
 

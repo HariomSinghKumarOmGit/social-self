@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import threading
 import time
 from datetime import datetime, timezone
@@ -20,6 +21,10 @@ from scrapers.twitter import scrape_twitter
 from scrapers.youtube import scrape_youtube
 
 logger = logging.getLogger(__name__)
+
+# When True, scraping uses user's real Chrome instead of APIs.
+# Set USE_BROWSER_SCRAPER=true in .env to enable.
+USE_BROWSER_SCRAPER = os.getenv("USE_BROWSER_SCRAPER", "true").lower() in ("true", "1", "yes")
 
 
 # ---------------------------------------------------------------------------
@@ -43,7 +48,74 @@ def _notify_telegram(message: str) -> None:
 
 def run_scrape_cycle() -> None:
     """Execute all scrapers, score new posts, and notify via Telegram."""
-    logger.info("=== Scrape cycle starting ===")
+    if USE_BROWSER_SCRAPER:
+        logger.info("Using BROWSER-based scrapers (Chrome CDP)")
+        _run_browser_scrape_cycle()
+    else:
+        logger.info("Using API-based scrapers")
+        _run_api_scrape_cycle()
+
+
+def _run_browser_scrape_cycle() -> None:
+    """Scrape using user's real Chrome browser via CDP."""
+    logger.info("=== Browser scrape cycle starting ===")
+    total_saved = 0
+    try:
+        from scrapers.browser_scraper import (
+            scrape_instagram_browser,
+            scrape_twitter_browser,
+            scrape_youtube_browser,
+        )
+        from sessions.browser_bridge import BrowserBridge
+
+        async def _scrape_all():
+            nonlocal total_saved
+            bridge = BrowserBridge()
+            await bridge.connect()
+            try:
+                try:
+                    ig = await scrape_instagram_browser(bridge)
+                    total_saved += len(ig)
+                except Exception:
+                    logger.exception("Instagram browser scraper crashed.")
+                try:
+                    tw = await scrape_twitter_browser(bridge)
+                    total_saved += len(tw)
+                except Exception:
+                    logger.exception("Twitter browser scraper crashed.")
+                try:
+                    yt = await scrape_youtube_browser(bridge)
+                    total_saved += len(yt)
+                except Exception:
+                    logger.exception("YouTube browser scraper crashed.")
+            finally:
+                await bridge.disconnect()
+
+        _run_async(_scrape_all())
+
+    except ConnectionError:
+        logger.error(
+            "Cannot connect to Chrome. Start Chrome with: "
+            "python -m sessions.launch_chrome"
+        )
+        _notify_telegram("❌ Scrape failed: Chrome not running with debug port. Run: python -m sessions.launch_chrome")
+        return
+    except Exception:
+        logger.exception("Browser scrape cycle crashed.")
+
+    scored = score_pending_posts()
+    logger.info("Browser scrape cycle done: %s new posts, %s scored.", total_saved, scored)
+    _notify_telegram(
+        f"🔄 Browser scrape complete\n"
+        f"New posts: {total_saved}\n"
+        f"Scored: {scored}\n"
+        f"Use /pending to review."
+    )
+
+
+def _run_api_scrape_cycle() -> None:
+    """Original API-based scrape cycle (Apify, Nitter RSS, YouTube RSS)."""
+    logger.info("=== API scrape cycle starting ===")
     total_saved = 0
     try:
         ig = scrape_instagram()
@@ -62,10 +134,10 @@ def run_scrape_cycle() -> None:
         logger.exception("YouTube scraper crashed.")
 
     scored = score_pending_posts()
-    logger.info("Scrape cycle done: %s new posts, %s scored.", total_saved, scored)
+    logger.info("API scrape cycle done: %s new posts, %s scored.", total_saved, scored)
 
     _notify_telegram(
-        f"🔄 Scrape cycle complete\n"
+        f"🔄 API scrape complete\n"
         f"New posts: {total_saved}\n"
         f"Scored: {scored}\n"
         f"Use /pending to review."
@@ -136,10 +208,21 @@ def run_post_cycle() -> None:
     """Check for approved posts due NOW and trigger browser posting."""
     logger.info("=== Post cycle starting ===")
     now = datetime.now(timezone.utc)
+    today = now.date().isoformat()
     current_hhmm = now.strftime("%H:%M")
 
     scheduled = get_scheduled()
-    due_posts = [p for p in scheduled if str(p.get("scheduled_time", "")) <= current_hhmm]
+    due_posts = []
+    for p in scheduled:
+        date_s = str(p.get("scheduled_date") or "")
+        time_s = str(p.get("scheduled_time") or "")
+        if not date_s or not time_s:
+            continue
+        if date_s < today:
+            due_posts.append(p)
+            continue
+        if date_s == today and time_s <= current_hhmm:
+            due_posts.append(p)
 
     if not due_posts:
         logger.info("No due posts at %s.", current_hhmm)

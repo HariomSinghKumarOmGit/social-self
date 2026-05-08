@@ -7,6 +7,20 @@
   <link rel="stylesheet" href="../static/style.css">
 </head>
 <body>
+  <!-- Top Navigation (matches Feed) -->
+  <nav class="topbar">
+    <div class="topbar-inner">
+      <div class="brand topbar-brand">Social<span>Agent</span></div>
+      <div class="nav-links">
+        <a href="/" class="active">📅 Calendar</a>
+        <a href="/feed">📊 Feed</a>
+      </div>
+      <div class="topbar-right">
+        <div id="totalBadge" class="topbar-badge">Loading...</div>
+      </div>
+    </div>
+  </nav>
+
   <div class="app-shell">
     <aside class="left-rail">
       <div class="brand">Social Agent</div>
@@ -50,6 +64,7 @@
             <option value="twitter">Twitter</option>
             <option value="youtube">YouTube</option>
           </select>
+          <button type="button" onclick="window.location.href='/feed'">📊 Feed</button>
           <div class="status-pill" id="statusBadge">Loading...</div>
         </div>
       </header>
@@ -89,6 +104,16 @@
     async function loadStatus() {
       const data = await fetchJson('/api/status');
       document.getElementById('statusBadge').textContent = `Scheduled: ${data.scheduled_count}`;
+    }
+
+    async function loadTotalPosts() {
+      try {
+        const posts = await fetchJson('/api/posts/feed');
+        const count = Array.isArray(posts) ? posts.length : 0;
+        document.getElementById('totalBadge').textContent = `${count} posts`;
+      } catch (e) {
+        document.getElementById('totalBadge').textContent = '—';
+      }
     }
 
     async function loadScheduled() {
@@ -131,6 +156,15 @@
       return null;
     }
 
+    function scheduledDateTime(post) {
+      const d = (post.scheduled_date || '').trim();
+      const t = (post.scheduled_time || '').trim();
+      if (d && t && /^\d{4}-\d{2}-\d{2}$/.test(d) && /^\d{2}:\d{2}$/.test(t)) {
+        return new Date(`${d}T${t}:00`);
+      }
+      return toDateSafe(post.scheduled_time) || toDateSafe(post.created_at);
+    }
+
     function getMonday(date) {
       const d = new Date(date);
       const day = (d.getDay() + 6) % 7;
@@ -162,7 +196,7 @@
           .filter((p) => !platformFilter || (p.platform || '').toLowerCase() === platformFilter)
           .filter((p) => !search || (p.content || '').toLowerCase().includes(search))
           .forEach((p) => {
-            const dt = toDateSafe(p.scheduled_time) || toDateSafe(p.created_at);
+            const dt = scheduledDateTime(p);
             if (!dt) return;
             if (
               dt.getFullYear() === day.getFullYear() &&
@@ -246,6 +280,7 @@
 
     (async function init() {
       await loadStatus();
+      await loadTotalPosts();
       await loadScheduled();
       await loadAccounts();
     })();
