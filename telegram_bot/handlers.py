@@ -231,6 +231,13 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await update.effective_message.reply_text(
         "/start - show instructions\n"
         "/pending - review pending posts\n"
+        "/insta - pending Instagram posts\n"
+        "/twitter - pending Twitter posts\n"
+        "/youtube - pending YouTube posts\n"
+        "/other - pending other platforms\n"
+        "/all - pending posts from all platforms\n"
+        "/filter <text> - set your persistent pending filter\n"
+        "/clearfilter - clear your persistent pending filter\n"
         "/schedule - show upcoming queue\n"
         "/scheduled - show approved queue\n"
         "/list [page] - paginated scheduled posts\n"
@@ -257,6 +264,10 @@ async def pending_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     query_text = " ".join(context.args).strip().lower()
+    if not query_text:
+        # Reuse user saved filter when command is called without args.
+        existing = _get_pending_prefs(context)
+        query_text = existing["query"]
     context.user_data[PENDING_PREFS_KEY] = {
         "platform": "",
         "sort": DEFAULT_SORT,
@@ -266,6 +277,87 @@ async def pending_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await update.effective_message.reply_text(
         f"Choose source and sort to view pending posts:{subtitle}",
         reply_markup=_build_pending_controls_keyboard("", DEFAULT_SORT, 0),
+    )
+
+
+async def _open_platform_pending(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    platform: str,
+    title: str,
+) -> None:
+    """Open pending feed directly for a chosen platform command."""
+    if not update.effective_message:
+        return
+    prefs = _set_pending_prefs(context, platform=platform)
+    query_suffix = f" | Query: {prefs['query']}" if prefs["query"] else ""
+    await update.effective_message.reply_text(
+        f"{title} | Sort: {_sort_label(prefs['sort'])}{query_suffix}",
+        reply_markup=_build_pending_controls_keyboard(platform, prefs["sort"], 0),
+    )
+    filtered_posts = _apply_pending_filters(
+        posts=get_pending(),
+        platform=prefs["platform"],
+        query_text=prefs["query"],
+        sort_key=prefs["sort"],
+    )
+    total = len(filtered_posts)
+    if total == 0:
+        await update.effective_message.reply_text("No pending posts for this filter/query.")
+        return
+    page = filtered_posts[0:PAGE_SIZE]
+    for post in page:
+        await _send_post_preview_to_message(update.effective_message, post)
+    if total > PAGE_SIZE:
+        await update.effective_message.reply_text(
+            f"Showing 1-{PAGE_SIZE} of {total}.",
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("Next ▶", callback_data=f"pending_filter|{platform}|{PAGE_SIZE}")]]
+            ),
+        )
+
+
+async def insta_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _open_platform_pending(update, context, "instagram", "📸 Instagram pending posts")
+
+
+async def twitter_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _open_platform_pending(update, context, "twitter", "🐦 Twitter pending posts")
+
+
+async def youtube_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _open_platform_pending(update, context, "youtube", "📺 YouTube pending posts")
+
+
+async def other_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _open_platform_pending(update, context, "other", "🧩 Other platform pending posts")
+
+
+async def all_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _open_platform_pending(update, context, "", "🗂 All pending posts")
+
+
+async def filter_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Persist user keyword filter for pending feed."""
+    if not update.effective_message:
+        return
+    query_text = " ".join(context.args).strip().lower()
+    if not query_text:
+        await update.effective_message.reply_text("Usage: /filter <text>")
+        return
+    prefs = _set_pending_prefs(context, query_text=query_text)
+    await update.effective_message.reply_text(
+        f"✅ Filter saved: {prefs['query']}\nUse /pending, /insta, /twitter, /youtube, /other, or /all."
+    )
+
+
+async def clearfilter_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Clear user keyword filter for pending feed."""
+    if not update.effective_message:
+        return
+    prefs = _set_pending_prefs(context, query_text="")
+    await update.effective_message.reply_text(
+        "✅ Filter cleared.\nUse /pending or any platform command to view all matching posts."
     )
 
 
@@ -783,6 +875,13 @@ def register_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("pending", pending_command))
+    application.add_handler(CommandHandler("insta", insta_command))
+    application.add_handler(CommandHandler("twitter", twitter_command))
+    application.add_handler(CommandHandler("youtube", youtube_command))
+    application.add_handler(CommandHandler("other", other_command))
+    application.add_handler(CommandHandler("all", all_command))
+    application.add_handler(CommandHandler("filter", filter_command))
+    application.add_handler(CommandHandler("clearfilter", clearfilter_command))
     application.add_handler(CommandHandler("schedule", schedule_command))
     application.add_handler(CommandHandler("scheduled", scheduled_command))
     application.add_handler(CommandHandler("list", list_command))
