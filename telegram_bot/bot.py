@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 from telegram.ext import Application, ContextTypes
+from telegram.error import Conflict
 
 # Allow running as: python3 telegram_bot/bot.py
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -24,11 +25,26 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
 )
 logger = logging.getLogger(__name__)
+# Avoid printing Telegram API URLs (they include bot token).
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 
 async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Log unhandled bot errors without crashing polling."""
     del update
+    if isinstance(context.error, Conflict):
+        logger.error(
+            "Telegram polling conflict (another bot instance is running). "
+            "Stop the other instance and restart this one."
+        )
+        try:
+            if context.application.updater:
+                await context.application.updater.stop()
+        finally:
+            await context.application.stop()
+            await context.application.shutdown()
+        return
     logger.exception("Unhandled telegram error: %s", context.error)
 
 

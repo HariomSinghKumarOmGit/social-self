@@ -481,6 +481,31 @@ def reject_post(post_id: int) -> bool:
         raise
 
 
+def cancel_post(post_id: int) -> bool:
+    """Cancel a pending/approved post by moving it to rejected state."""
+    updated_at = _utc_now_iso()
+    try:
+        with closing(_get_connection()) as conn:
+            with conn:
+                cursor = conn.execute(
+                    """
+                    UPDATE posts
+                    SET status = ?, updated_at = ?
+                    WHERE id = ? AND status IN (?, ?)
+                    """,
+                    (STATUS_REJECTED, updated_at, post_id, STATUS_PENDING, STATUS_APPROVED),
+                )
+        changed = cursor.rowcount > 0
+        if changed:
+            logger.info("Cancelled post %s", post_id)
+        else:
+            logger.warning("Post %s was not cancelled (missing or already final).", post_id)
+        return changed
+    except sqlite3.Error:
+        logger.exception("Failed to cancel post %s", post_id)
+        raise
+
+
 def get_scheduled() -> List[Dict[str, Any]]:
     """Return approved posts that have a scheduled time."""
     try:
