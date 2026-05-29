@@ -20,6 +20,7 @@ from flask_cors import CORS
 
 from config import ACCOUNTS, LOOKBACK_DAYS
 from database import (
+    DB_PATH,
     add_managed_account,
     delete_managed_account,
     get_default_time,
@@ -93,6 +94,18 @@ def _run_scrape_job() -> None:
 # Background scheduler only for local/long-running processes (not Vercel serverless).
 if not os.environ.get("VERCEL"):
     _ensure_background_scheduler()
+
+
+@app.get("/api/health")
+def api_health() -> Any:
+    """Lightweight health check for Vercel / uptime monitors."""
+    return jsonify(
+        {
+            "ok": True,
+            "vercel": bool(os.environ.get("VERCEL")),
+            "db": str(DB_PATH),
+        }
+    )
 
 
 @app.get("/")

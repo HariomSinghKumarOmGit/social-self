@@ -1,0 +1,8 @@
+# Slim deps for Vercel serverless (no Playwright — too large for functions).
+apify-client
+feedparser
+flask
+flask-cors
+python-dotenv
+requests
+Pillow

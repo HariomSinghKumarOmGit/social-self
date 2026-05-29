@@ -61,6 +61,11 @@ def get_system_status() -> Dict[str, Any]:
 
 def start_telegram_bot() -> Dict[str, Any]:
     """Start Telegram bot if not already running."""
+    if os.environ.get("VERCEL"):
+        return {
+            "ok": False,
+            "error": "Telegram bot cannot run on Vercel. Use Start Beast locally or a VPS.",
+        }
     if _process_running("telegram_bot/bot.py"):
         return {"ok": True, "bot": "already_running", "message": "Telegram bot already running."}
 

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sqlite3
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
@@ -15,7 +16,18 @@ from typing import Any, Dict, List, Optional
 
 from config import ACCOUNTS
 
-DB_PATH = Path("agent.db")
+
+def _resolve_db_path() -> Path:
+    """Use /tmp on Vercel/Lambda (only writable path in serverless)."""
+    override = os.environ.get("DATABASE_PATH", "").strip()
+    if override:
+        return Path(override)
+    if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+        return Path("/tmp/agent.db")
+    return Path("agent.db")
+
+
+DB_PATH = _resolve_db_path()
 
 STATUS_PENDING = "pending"
 STATUS_APPROVED = "approved"
