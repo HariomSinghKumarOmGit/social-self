@@ -30,18 +30,39 @@ NITTER_HOSTS = (
 )
 
 
+def _parse_count(raw: str) -> int:
+    """Parse '1,234' or '12.5K' style counts from Nitter/RSS text."""
+    if not raw:
+        return 0
+    s = raw.strip().replace(",", "").upper()
+    try:
+        if s.endswith("K"):
+            return int(float(s[:-1]) * 1_000)
+        if s.endswith("M"):
+            return int(float(s[:-1]) * 1_000_000)
+        if s.endswith("B"):
+            return int(float(s[:-1]) * 1_000_000_000)
+        return int(float(s))
+    except ValueError:
+        return 0
+
+
 def _extract_counts(text: str) -> Dict[str, int]:
-    """Extract likes, replies/comments, reposts, and saves when available."""
+    """Extract likes, replies/comments, reposts, saves, and views when available."""
     clean_text = unescape(text or "")
-    likes_match = re.search(r"([\d,]+)\s+likes?", clean_text, re.IGNORECASE)
-    reposts_match = re.search(r"([\d,]+)\s+(retweets?|reposts?)", clean_text, re.IGNORECASE)
-    comments_match = re.search(r"([\d,]+)\s+(repl(?:y|ies)|comments?)", clean_text, re.IGNORECASE)
-    saves_match = re.search(r"([\d,]+)\s+(bookmarks?|saves?)", clean_text, re.IGNORECASE)
-    likes = int(likes_match.group(1).replace(",", "")) if likes_match else 0
-    reposts = int(reposts_match.group(1).replace(",", "")) if reposts_match else 0
-    comments = int(comments_match.group(1).replace(",", "")) if comments_match else 0
-    saves = int(saves_match.group(1).replace(",", "")) if saves_match else 0
-    return {"likes": likes, "comments": comments, "shares": reposts, "saves": saves}
+    patterns = [
+        (r"([\d,.]+[KMB]?)\s+likes?", "likes"),
+        (r"([\d,.]+[KMB]?)\s+(retweets?|reposts?)", "shares"),
+        (r"([\d,.]+[KMB]?)\s+(repl(?:y|ies)|comments?)", "comments"),
+        (r"([\d,.]+[KMB]?)\s+(bookmarks?|saves?)", "saves"),
+        (r"([\d,.]+[KMB]?)\s+views?", "views"),
+    ]
+    out = {"likes": 0, "comments": 0, "shares": 0, "saves": 0, "views": 0}
+    for pattern, key in patterns:
+        match = re.search(pattern, clean_text, re.IGNORECASE)
+        if match:
+            out[key] = _parse_count(match.group(1))
+    return out
 
 
 def _fetch_feed(url: str, retries: int = 3) -> Optional[feedparser.FeedParserDict]:
@@ -104,6 +125,7 @@ def scrape_twitter() -> List[Dict[str, object]]:
                     counts["likes"]
                     + counts["comments"] * 3
                     + counts["shares"] * 2
+                    + counts["views"] * 0.01
                 )
                 post_url = entry.get("link", "").strip()
                 media_url = ""
@@ -120,7 +142,7 @@ def scrape_twitter() -> List[Dict[str, object]]:
                     comments=counts["comments"],
                     shares=counts["shares"],
                     saves=counts["saves"],
-                    views=0,
+                    views=counts["views"],
                     engagement_score=float(engagement),
                 )
                 saved_items.append(

@@ -310,6 +310,7 @@ async def pending_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if not update.effective_message:
         return
     try:
+        pending_count = len(get_pending())
         query_text = " ".join(context.args).strip().lower()
         if not query_text:
             existing = _get_pending_prefs(context)
@@ -322,7 +323,7 @@ async def pending_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         }
         subtitle = f"\nFilter: {query_text}" if query_text else ""
         await update.effective_message.reply_text(
-            f"Choose platform and sort:{subtitle}",
+            f"📋 {pending_count} pending posts.\nChoose platform and sort:{subtitle}",
             reply_markup=_build_pending_controls_keyboard("", DEFAULT_SORT, 0),
         )
     except Exception:
@@ -666,28 +667,35 @@ async def _send_filtered_pending_page(
         )
 
 
-async def _send_pending_page(message: Message, platform: str, offset: int) -> None:
+async def _send_pending_page(
+    message: Message,
+    platform: str,
+    offset: int,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
     if not message:
         return
-    posts = get_pending()
-    if platform == "other":
-        known = {"instagram", "twitter", "youtube"}
-        posts = [p for p in posts if str(p.get("platform", "")).lower() not in known]
-    elif platform:
-        posts = [p for p in posts if str(p.get("platform", "")).lower() == platform]
+    prefs = _set_pending_prefs(context, platform=platform)
+    posts = _apply_pending_filters(
+        posts=get_pending(),
+        platform=prefs["platform"],
+        query_text=prefs["query"],
+        sort_key=prefs["sort"],
+        author=prefs.get("author", ""),
+    )
     total = len(posts)
     if total == 0:
         await message.reply_text("No pending posts for this source.")
         return
-    offset = max(0, min(offset, max(0, total)))
-    page = posts[offset : offset + PAGE_SIZE]
+    bounded_offset = max(0, min(offset, max(0, total - 1)))
+    page = posts[bounded_offset : bounded_offset + PAGE_SIZE]
     for post in page:
         await _send_post_preview_to_message(message, post)
 
-    next_offset = offset + PAGE_SIZE
+    next_offset = bounded_offset + PAGE_SIZE
     nav_rows: List[List[InlineKeyboardButton]] = []
-    if offset > 0:
-        prev_offset = max(0, offset - PAGE_SIZE)
+    if bounded_offset > 0:
+        prev_offset = max(0, bounded_offset - PAGE_SIZE)
         nav_rows.append(
             [InlineKeyboardButton("◀ Prev", callback_data=f"pending_filter|{platform}|{prev_offset}")]
         )
@@ -695,7 +703,7 @@ async def _send_pending_page(message: Message, platform: str, offset: int) -> No
         nav_rows.append([InlineKeyboardButton("Next ▶", callback_data=f"pending_filter|{platform}|{next_offset}")])
     if nav_rows:
         await message.reply_text(
-            f"Showing {offset + 1}-{min(next_offset, total)} of {total}.",
+            f"Showing {bounded_offset + 1}-{min(next_offset, total)} of {total}.",
             reply_markup=InlineKeyboardMarkup(nav_rows),
         )
 

@@ -11,3 +11,7 @@ sessions/youtube/
 # Debug screenshots & logs
 logs/*.png
 logs/*.log
+
+# Frontend build
+review-ui/node_modules/
+review-ui/dist/

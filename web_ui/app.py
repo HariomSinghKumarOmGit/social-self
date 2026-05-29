@@ -7,21 +7,24 @@ import logging
 import os
 import sys
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 # Ensure the project root is on the Python path so sibling modules are importable.
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from typing import Any, Dict
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, send_from_directory
 from flask_cors import CORS
 
 from config import ACCOUNTS, LOOKBACK_DAYS
 from database import (
     add_managed_account,
     delete_managed_account,
+    get_default_time,
     get_managed_accounts,
+    get_pending,
     get_posts_feed,
     get_preferences,
     get_time_slots,
@@ -33,6 +36,8 @@ from database import (
     set_default_time,
     set_target_account,
 )
+from web_ui.review_logic import filter_and_sort_posts, queue_stats
+from web_ui.system_control import get_system_status, start_beast
 
 app = Flask(__name__)
 CORS(app)
@@ -100,6 +105,37 @@ def feed() -> str:
     return render_template("feed.html")
 
 
+REVIEW_DIST = Path(__file__).resolve().parent.parent / "review-ui" / "dist"
+
+
+@app.get("/review")
+@app.get("/review/")
+def review_page() -> Any:
+    """Serve Vite-built swipe review app, or fallback template."""
+    index = REVIEW_DIST / "index.html"
+    if index.exists():
+        return send_from_directory(REVIEW_DIST, "index.html")
+    return render_template("review.html")
+
+
+@app.get("/review/<path:asset_path>")
+def review_assets(asset_path: str) -> Any:
+    """Serve built review-ui static assets under /review/."""
+    target = REVIEW_DIST / asset_path
+    if target.exists() and REVIEW_DIST.exists():
+        return send_from_directory(REVIEW_DIST, asset_path)
+    return jsonify({"error": "not found"}), 404
+
+
+@app.get("/assets/<path:filename>")
+def review_vite_assets(filename: str) -> Any:
+    """Serve Vite bundle assets referenced from /review (fixes blank review page)."""
+    asset_dir = REVIEW_DIST / "assets"
+    if asset_dir.exists():
+        return send_from_directory(asset_dir, filename)
+    return jsonify({"error": "review assets not built"}), 404
+
+
 @app.get("/api/scheduled")
 def api_scheduled() -> Any:
     """Return all approved scheduled posts."""
@@ -108,8 +144,56 @@ def api_scheduled() -> Any:
 
 @app.get("/api/posts/feed")
 def api_posts_feed() -> Any:
-    """Return all posts for the feed UI."""
-    return jsonify(get_posts_feed())
+    """Return all posts for the feed UI with computed engagement."""
+    sort_key = request.args.get("sort", "newest")
+    platform = request.args.get("platform", "")
+    author = request.args.get("author", "")
+    posts = filter_and_sort_posts(
+        get_posts_feed(),
+        platform=platform,
+        author=author,
+        sort_key=sort_key if sort_key in {"interaction", "likes", "newest"} else "newest",
+    )
+    return jsonify(posts)
+
+
+@app.get("/api/review/queue")
+def api_review_queue() -> Any:
+    """Return pending posts for swipe review UI."""
+    platform = request.args.get("platform", "").strip().lower()
+    author = request.args.get("author", "").strip()
+    sort_key = request.args.get("sort", "interaction").strip().lower()
+    posts = filter_and_sort_posts(
+        get_pending(),
+        platform=platform,
+        author=author,
+        sort_key=sort_key if sort_key in {"interaction", "likes", "newest"} else "interaction",
+    )
+    return jsonify({"posts": posts, "stats": queue_stats(posts)})
+
+
+@app.post("/api/review/approve")
+def api_review_approve() -> Any:
+    """Approve post from swipe UI using default schedule slot."""
+    body = request.get_json(force=True, silent=True) or {}
+    post_id = int(body.get("post_id", 0) or 0)
+    if post_id <= 0:
+        return jsonify({"ok": False, "error": "post_id required"}), 400
+    tomorrow = (datetime.now(timezone.utc).date() + timedelta(days=1)).isoformat()
+    time_slot = get_default_time()
+    ok = schedule_post(post_id, tomorrow, time_slot)
+    if ok:
+        set_default_time(time_slot)
+    return jsonify({"ok": ok})
+
+
+@app.post("/api/review/reject")
+def api_review_reject() -> Any:
+    """Reject post from swipe UI."""
+    body = request.get_json(force=True, silent=True) or {}
+    post_id = int(body.get("post_id", 0) or 0)
+    ok = reject_post(post_id) if post_id > 0 else False
+    return jsonify({"ok": ok})
 
 
 @app.post("/api/posts/reject")
@@ -177,6 +261,18 @@ def api_post_now() -> Any:
     post_id = int(body.get("post_id", 0) or 0)
     ok = mark_posted(post_id) if post_id > 0 else False
     return jsonify({"ok": ok})
+
+
+@app.get("/api/system/status")
+def api_system_status() -> Any:
+    """Return web + bot + review build status."""
+    return jsonify(get_system_status())
+
+
+@app.post("/api/system/start-beast")
+def api_start_beast() -> Any:
+    """One-click start: Telegram bot + return all app links."""
+    return jsonify(start_beast())
 
 
 @app.get("/api/status")

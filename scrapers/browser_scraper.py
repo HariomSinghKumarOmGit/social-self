@@ -364,9 +364,13 @@ async def _extract_tweets(page: Page, username: str) -> List[Dict[str, Any]]:
                 const groups = article.querySelectorAll('[role="group"] button');
                 groups.forEach(btn => {
                     const label = btn.getAttribute('aria-label') || '';
-                    const match = label.match(/([\ d,]+)\s+(repl|retweet|like|bookmark|view)/i);
+                    const match = label.match(/([\d,.]+[KMB]?)\s+(repl|retweet|like|bookmark|view)/i);
                     if (match) {
-                        const count = parseInt(match[1].replace(/,/g, ''));
+                        let raw = match[1].replace(/,/g, '');
+                        let count = 0;
+                        if (/K$/i.test(raw)) count = Math.round(parseFloat(raw) * 1000);
+                        else if (/M$/i.test(raw)) count = Math.round(parseFloat(raw) * 1000000);
+                        else count = parseInt(raw, 10) || 0;
                         const type = match[2].toLowerCase();
                         if (type.startsWith('repl')) result.replies = count;
                         else if (type.startsWith('retweet')) result.retweets = count;
