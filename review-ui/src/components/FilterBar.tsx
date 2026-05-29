@@ -39,22 +39,22 @@ export function FilterBar({
   ];
 
   return (
-    <header className="shrink-0 border-b border-border bg-surface/95 px-3 py-3 backdrop-blur md:px-6">
+    <header className="sticky top-0 z-40 shrink-0 border-b border-border bg-surface/95 px-2 py-2 backdrop-blur sm:px-3 sm:py-3 md:px-6">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <a href="/" className="text-sm text-gray-400 hover:text-white">
+        <div className="flex min-w-0 items-center gap-2">
+          <a href="/" className="shrink-0 text-xs text-gray-400 hover:text-white sm:text-sm">
             ← Calendar
           </a>
-          <h1 className="text-lg font-bold">
+          <h1 className="truncate text-base font-bold sm:text-lg">
             Review <span className="text-accent">Stack</span>
           </h1>
         </div>
-        <div className="flex gap-2">
+        <div className="flex shrink-0 flex-wrap gap-1.5 sm:gap-2">
           <button
             type="button"
             onClick={onStartBeast}
             disabled={beastLoading}
-            className="rounded-full px-3 py-1.5 text-xs font-extrabold uppercase tracking-wide text-white disabled:opacity-60"
+            className="rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide text-white disabled:opacity-60 sm:px-3 sm:py-1.5 sm:text-xs"
             style={{
               background: "linear-gradient(135deg, #ff6b35, #f72585 55%, #7209b7)",
             }}

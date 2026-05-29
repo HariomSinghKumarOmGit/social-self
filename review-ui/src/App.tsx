@@ -131,7 +131,7 @@ export default function App() {
         <p className="bg-red/10 px-4 py-2 text-center text-sm text-red">{error}</p>
       )}
 
-      <main className="relative flex flex-1 flex-col justify-center overflow-hidden pb-24">
+      <main className="relative flex flex-1 flex-col justify-center overflow-hidden px-1 pb-[5.5rem] sm:px-0 sm:pb-24">
         {loading && (
           <p className="text-center text-gray-500">Loading posts…</p>
         )}
@@ -160,12 +160,12 @@ export default function App() {
       </main>
 
       {topPost && !done && (
-        <div className="fixed bottom-0 left-0 right-0 flex justify-center gap-10 border-t border-border bg-surface/95 py-5 backdrop-blur safe-pb">
+        <div className="fixed bottom-0 left-0 right-0 z-50 flex justify-center gap-8 border-t border-border bg-surface/95 py-4 backdrop-blur safe-pb sm:gap-10 sm:py-5">
           <button
             type="button"
             aria-label="Reject"
             onClick={() => handleSwipe("left", topPost)}
-            className="flex h-14 w-14 items-center justify-center rounded-full bg-red text-2xl shadow-lg shadow-red/30"
+            className="flex h-12 w-12 items-center justify-center rounded-full bg-red text-xl shadow-lg shadow-red/30 sm:h-14 sm:w-14 sm:text-2xl"
           >
             ✗
           </button>
@@ -173,7 +173,7 @@ export default function App() {
             type="button"
             aria-label="Approve"
             onClick={() => handleSwipe("right", topPost)}
-            className="flex h-16 w-16 items-center justify-center rounded-full bg-green text-3xl shadow-lg shadow-green/30"
+            className="flex h-14 w-14 items-center justify-center rounded-full bg-green text-2xl shadow-lg shadow-green/30 sm:h-16 sm:w-16 sm:text-3xl"
           >
             ✓
           </button>

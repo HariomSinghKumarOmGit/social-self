@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import signal
 import socket
 import sys
@@ -56,8 +57,9 @@ def _start_flask() -> None:
     """Run Flask in a daemon thread (non-debug for threading safety)."""
     from web_ui.app import app
 
-    logger.info("Starting Flask on 0.0.0.0:5001")
-    app.run(host="0.0.0.0", port=5001, debug=False, use_reloader=False)
+    port = int(os.environ.get("PORT", "5001"))
+    logger.info("Starting Flask on 0.0.0.0:%s", port)
+    app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
 
 
 def _start_telegram_bot() -> None:
@@ -95,6 +97,7 @@ def _shutdown_handler(signum, frame):
 
 def main() -> NoReturn:
     """Launch all three subsystems and wait for shutdown."""
+    os.environ["SOCIAL_AGENT_EMBEDDED_BOT"] = "1"
     signal.signal(signal.SIGINT, _shutdown_handler)
     signal.signal(signal.SIGTERM, _shutdown_handler)
 

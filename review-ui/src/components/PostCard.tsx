@@ -24,7 +24,7 @@ export function PostCard({ post, overlay }: Props) {
   const gradient = ACCENT[p] || "from-accent/20";
 
   return (
-    <div className="relative flex h-full w-full max-w-md flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
+    <div className="relative flex h-full w-full flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl sm:max-w-md">
       <div className={`bg-gradient-to-b ${gradient} to-transparent px-4 pb-2 pt-4`}>
         <div className="flex items-start gap-3">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-black/30 text-xl">
@@ -64,7 +64,7 @@ export function PostCard({ post, overlay }: Props) {
         </a>
       </div>
 
-      <div className="grid grid-cols-5 gap-1 border-t border-border bg-black/20 px-2 py-3 text-center text-[10px] uppercase tracking-wide text-gray-500">
+      <div className="grid grid-cols-3 gap-1 border-t border-border bg-black/20 px-2 py-2 text-center text-[9px] uppercase tracking-wide text-gray-500 sm:grid-cols-5 sm:py-3 sm:text-[10px]">
         <Stat label="Likes" value={fmtNum(post.likes)} icon="❤️" />
         <Stat label="Comments" value={fmtNum(post.comments)} icon="💬" />
         <Stat label="Shares" value={fmtNum(post.shares)} icon="🔁" />

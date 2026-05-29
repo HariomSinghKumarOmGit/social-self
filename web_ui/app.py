@@ -126,11 +126,21 @@ REVIEW_DIST = Path(__file__).resolve().parent.parent / "review-ui" / "dist"
 @app.get("/review")
 @app.get("/review/")
 def review_page() -> Any:
-    """Serve Vite-built swipe review app, or fallback template."""
+    """Serve Vite-built swipe review app."""
     index = REVIEW_DIST / "index.html"
     if index.exists():
         return send_from_directory(REVIEW_DIST, "index.html")
-    return render_template("review.html")
+    return (
+        "<!doctype html><html><body style='font-family:system-ui;background:#08090d;color:#fff;"
+        "display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0'>"
+        "<div style='text-align:center;padding:2rem'>"
+        "<h1>Review UI not built</h1>"
+        "<p>Run <code>cd review-ui && npm ci && npm run build</code> then redeploy.</p>"
+        "<p><a href='/feed' style='color:#4f8ff7'>← Back to feed</a></p>"
+        "</div></body></html>",
+        503,
+        {"Content-Type": "text/html; charset=utf-8"},
+    )
 
 
 @app.get("/review/<path:asset_path>")

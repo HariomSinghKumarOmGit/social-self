@@ -19,7 +19,7 @@ export function SwipeDeck({ posts, onSwipe, reviewedCount, totalInSession }: Pro
   if (!stack.length) return null;
 
   return (
-    <div className="relative mx-auto h-[min(72vh,640px)] w-full max-w-md px-4">
+    <div className="relative mx-auto h-[min(calc(100dvh-11rem),640px)] w-full max-w-md px-2 sm:px-4 md:h-[min(72vh,640px)]">
       <p className="mb-3 text-center text-sm text-gray-400">
         {reviewedCount} / {totalInSession} reviewed
       </p>
@@ -73,7 +73,7 @@ function SwipeCard({
   if (exitDir && isTop) {
     return (
       <motion.div
-        className="absolute inset-x-4 top-8"
+        className="absolute inset-x-2 top-4 sm:inset-x-4 sm:top-8"
         style={{ scale, y, zIndex: 30 - index, opacity }}
         animate={{ x: flyOff, rotate: exitDir === "right" ? 20 : -20, opacity: 0 }}
         transition={{ duration: 0.28 }}
@@ -85,7 +85,7 @@ function SwipeCard({
 
   return (
     <motion.div
-      className="absolute inset-x-4 top-8 touch-none"
+      className="absolute inset-x-2 top-4 touch-none sm:inset-x-4 sm:top-8"
       style={{
         x: isTop ? x : 0,
         rotate: isTop ? rotate : 0,

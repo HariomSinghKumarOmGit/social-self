@@ -1,0 +1,15 @@
+# Railway / Nixpacks: Python app + Vite review UI build
+[phases.setup]
+nixPkgs = ["python313", "nodejs_20"]
+
+[phases.install]
+cmds = [
+  "pip install -r requirements.txt",
+  "cd review-ui && npm ci",
+]
+
+[phases.build]
+cmds = ["python scripts/vercel_build.py"]
+
+[start]
+cmd = "python main.py"

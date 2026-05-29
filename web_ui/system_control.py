@@ -21,10 +21,23 @@ def _port() -> str:
 
 
 def _base_url() -> str:
+    railway_domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "").strip()
+    if railway_domain:
+        return f"https://{railway_domain}"
+    public_ip = os.environ.get("EC2_PUBLIC_IP", "").strip()
+    if public_ip:
+        return f"http://{public_ip}:{_port()}"
     return f"http://127.0.0.1:{_port()}"
 
 
+def _embedded_bot() -> bool:
+    """True when main.py runs the bot in-process (Railway, docker, main entry)."""
+    return os.environ.get("SOCIAL_AGENT_EMBEDDED_BOT") == "1"
+
+
 def _process_running(pattern: str) -> bool:
+    if _embedded_bot():
+        return True
     try:
         result = subprocess.run(
             ["pgrep", "-f", pattern],
@@ -33,14 +46,35 @@ def _process_running(pattern: str) -> bool:
             check=False,
         )
         return result.returncode == 0
+    except FileNotFoundError:
+        pass
     except Exception:
         logger.exception("Failed checking process: %s", pattern)
         return False
 
+    # Minimal containers (Railway) often lack pgrep — scan /proc on Linux.
+    if sys.platform == "linux":
+        proc = Path("/proc")
+        try:
+            for entry in proc.iterdir():
+                if not entry.name.isdigit():
+                    continue
+                try:
+                    cmdline = entry.joinpath("cmdline").read_bytes().replace(b"\0", b" ").decode(
+                        errors="ignore"
+                    )
+                except OSError:
+                    continue
+                if pattern in cmdline:
+                    return True
+        except OSError:
+            pass
+    return False
+
 
 def get_system_status() -> Dict[str, Any]:
     """Return health of web UI, Telegram bot, and review build."""
-    bot_running = _process_running("telegram_bot/bot.py")
+    bot_running = _process_running("telegram_bot/bot.py") or _embedded_bot()
     review_built = (REVIEW_DIST / "index.html").exists()
     port = _port()
     base = _base_url()
@@ -50,6 +84,7 @@ def get_system_status() -> Dict[str, Any]:
         "bot": bot_running,
         "review_built": review_built,
         "port": port,
+        "embedded_bot": _embedded_bot(),
         "links": {
             "home": f"{base}/",
             "feed": f"{base}/feed",
@@ -65,6 +100,12 @@ def start_telegram_bot() -> Dict[str, Any]:
         return {
             "ok": False,
             "error": "Telegram bot cannot run on Vercel. Use Start Beast locally or a VPS.",
+        }
+    if _embedded_bot():
+        return {
+            "ok": True,
+            "bot": "embedded",
+            "message": "Telegram bot already running (main process).",
         }
     if _process_running("telegram_bot/bot.py"):
         return {"ok": True, "bot": "already_running", "message": "Telegram bot already running."}
@@ -98,9 +139,17 @@ def start_beast() -> Dict[str, Any]:
         "links": status["links"],
         "review_built": status["review_built"],
         "web": True,
+        "bot": status["bot"],
     }
 
-    if not status["bot"]:
+    if status["bot"]:
+        result["message"] = "Beast mode ON — everything already running."
+    elif os.environ.get("RAILWAY_ENVIRONMENT"):
+        result["message"] = (
+            "Beast mode ON — redeploy with `python main.py` start command so bot runs in-process."
+        )
+        result["bot"] = _embedded_bot()
+    else:
         bot_result = start_telegram_bot()
         result["bot_action"] = bot_result
         if not bot_result.get("ok"):
@@ -109,9 +158,6 @@ def start_beast() -> Dict[str, Any]:
         else:
             result["bot"] = True
             result["message"] = "Beast mode ON — web + Telegram bot are running."
-    else:
-        result["bot"] = True
-        result["message"] = "Beast mode ON — everything already running."
 
     if not status["review_built"]:
         result["warning"] = (

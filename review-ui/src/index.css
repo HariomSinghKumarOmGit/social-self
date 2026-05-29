@@ -12,4 +12,17 @@ body {
   margin: 0;
   background: #08090d;
   -webkit-tap-highlight-color: transparent;
+  overflow-x: hidden;
+}
+
+.safe-pb {
+  padding-bottom: max(1.25rem, env(safe-area-inset-bottom));
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
 }
