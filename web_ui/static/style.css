@@ -2,10 +2,10 @@
 body {
   margin: 0;
   font-family: Inter, Arial, sans-serif;
-  background: #0d1018;
+  background: #050608;
   color: #e6edf3;
 }
-
+/* added the color  */
 /* ── Top Nav (shared with Feed) ── */
 .topbar {
   position: sticky;
