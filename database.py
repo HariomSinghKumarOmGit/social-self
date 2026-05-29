@@ -16,6 +16,9 @@ from typing import Any, Dict, List, Optional
 
 from config import ACCOUNTS
 
+# Always resolve DB relative to repo root (not process cwd — bot may start from telegram_bot/).
+_PROJECT_ROOT = Path(__file__).resolve().parent
+
 
 def _resolve_db_path() -> Path:
     """Use /tmp on Vercel/Lambda (only writable path in serverless)."""
@@ -24,7 +27,7 @@ def _resolve_db_path() -> Path:
         return Path(override)
     if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
         return Path("/tmp/agent.db")
-    return Path("agent.db")
+    return _PROJECT_ROOT / "agent.db"
 
 
 DB_PATH = _resolve_db_path()

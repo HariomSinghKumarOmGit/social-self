@@ -7,7 +7,6 @@ venv
 .env
 .env.*
 review-ui/node_modules
-review-ui/src
 .playwright
 ms-playwright
 logs

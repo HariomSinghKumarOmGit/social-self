@@ -212,7 +212,7 @@ def _build_pending_controls_keyboard(active_platform: str, active_sort: str, off
         )
 
     sort_row = [mk_sort(SORT_NEWEST), mk_sort(SORT_TOP_SCORE), mk_sort(SORT_MOST_LIKES)]
-    return InlineKeyboardMarkup(platform_keyboard + [sort_row])
+    return InlineKeyboardMarkup(list(platform_keyboard) + [sort_row])
 
 
 def _build_date_keyboard(post_id: int) -> InlineKeyboardMarkup:
@@ -809,15 +809,20 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await _send_filtered_pending_page(query.message, prefs, offset=0, header=title)
             return
 
-        if parts[0] == "pending_filter" and len(parts) == 3:
+        if parts[0] == "pending_filter" and len(parts) >= 2:
             platform = parts[1]
-            offset = int(parts[2])
+            offset = int(parts[2]) if len(parts) >= 3 and parts[2] != "" else 0
             if not query.message:
                 return
             prefs = _set_pending_prefs(context, platform=platform, author="")
-            if offset == 0 and platform in {"twitter", "instagram"} and ACCOUNTS.get(platform):
+            # Skip account picker when user taps "All" (empty platform).
+            if (
+                offset == 0
+                and platform in {"twitter", "instagram"}
+                and ACCOUNTS.get(platform)
+            ):
                 await query.message.reply_text(
-                    f"Filter: {_platform_label(platform)}\nPick an account:",
+                    f"Filter: {_platform_label(platform)}\nPick an account (or tap All accounts):",
                     reply_markup=_build_author_keyboard(platform),
                 )
                 return
