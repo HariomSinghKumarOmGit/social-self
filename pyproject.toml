@@ -1,0 +1,11 @@
+[project]
+name = "social-self"
+version = "1.0.0"
+requires-python = ">=3.11"
+description = "Social media automation agent"
+
+[tool.vercel]
+entrypoint = "web_ui.app:app"
+
+[tool.vercel.scripts]
+build = "python scripts/vercel_build.py"

@@ -90,7 +90,9 @@ def _run_scrape_job() -> None:
             _scrape_state["running"] = False
 
 
-_ensure_background_scheduler()
+# Background scheduler only for local/long-running processes (not Vercel serverless).
+if not os.environ.get("VERCEL"):
+    _ensure_background_scheduler()
 
 
 @app.get("/")
