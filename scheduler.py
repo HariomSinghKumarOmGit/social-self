@@ -9,12 +9,12 @@ import os
 import threading
 import time
 from datetime import datetime, timezone
-from typing import Callable, List
+from typing import Callable, List, Optional
 
 import schedule
 
-from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
-from database import get_scheduled, mark_posted
+from config import LOOKBACK_DAYS, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+from database import delete_posts_older_than_days, get_scheduled, mark_posted
 from filters.scorer import score_pending_posts
 from scrapers.instagram import scrape_instagram
 from scrapers.twitter import scrape_twitter
@@ -46,8 +46,19 @@ def _notify_telegram(message: str) -> None:
         logger.exception("Failed to send Telegram notification.")
 
 
+def run_cleanup_cycle(days: Optional[int] = None) -> int:
+    """Remove posts older than LOOKBACK_DAYS (default 7)."""
+    retention = days if days is not None else LOOKBACK_DAYS
+    deleted = delete_posts_older_than_days(retention)
+    logger.info("Cleanup removed %s posts older than %s days.", deleted, retention)
+    return deleted
+
+
 def run_scrape_cycle() -> None:
-    """Execute all scrapers, score new posts, and notify via Telegram."""
+    """Execute cleanup, all scrapers, score new posts, and notify via Telegram."""
+    deleted = run_cleanup_cycle()
+    if deleted:
+        _notify_telegram(f"🧹 Removed {deleted} posts older than {LOOKBACK_DAYS} days.")
     if USE_BROWSER_SCRAPER:
         logger.info("Using BROWSER-based scrapers (Chrome CDP)")
         _run_browser_scrape_cycle()
@@ -57,7 +68,10 @@ def run_scrape_cycle() -> None:
 
 
 def _run_browser_scrape_cycle() -> None:
-    """Scrape using user's real Chrome browser via CDP."""
+    """Scrape using user's real Chrome browser via CDP.
+
+    Falls back to API scrapers automatically if Chrome isn't running.
+    """
     logger.info("=== Browser scrape cycle starting ===")
     total_saved = 0
     try:
@@ -93,15 +107,13 @@ def _run_browser_scrape_cycle() -> None:
 
         _run_async(_scrape_all())
 
-    except ConnectionError:
-        logger.error(
-            "Cannot connect to Chrome. Start Chrome with: "
-            "python -m sessions.launch_chrome"
+    except (ConnectionError, OSError, Exception) as exc:
+        logger.warning(
+            "Browser scrape failed (%s). Falling back to API scrapers.",
+            type(exc).__name__,
         )
-        _notify_telegram("❌ Scrape failed: Chrome not running with debug port. Run: python -m sessions.launch_chrome")
+        _run_api_scrape_cycle()
         return
-    except Exception:
-        logger.exception("Browser scrape cycle crashed.")
 
     scored = score_pending_posts()
     logger.info("Browser scrape cycle done: %s new posts, %s scored.", total_saved, scored)
@@ -243,11 +255,11 @@ def run_post_cycle() -> None:
 
 def start_scheduler() -> None:
     """Configure scheduled jobs and run the blocking polling loop."""
-    schedule.every().day.at("08:00").do(run_scrape_cycle)
+    schedule.every(24).hours.do(run_scrape_cycle)
     schedule.every().hour.do(run_post_cycle)
 
     logger.info(
-        "Scheduler started. Scrape at 08:00 daily, post check every hour. "
+        "Scheduler started. Scrape+cleanup every 24h, post check every hour. "
         "Next run: %s",
         schedule.next_run(),
     )

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from typing import Dict, List, Optional
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Message, Update
@@ -12,7 +13,7 @@ from telegram.constants import ParseMode
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 from telegram.helpers import escape_markdown
 
-from config import EC2_PUBLIC_IP, POST_TIMES
+from config import ACCOUNTS, EC2_PUBLIC_IP, POST_TIMES
 from database import (
     cancel_post,
     format_time_display,
@@ -28,7 +29,7 @@ from database import (
 
 logger = logging.getLogger(__name__)
 
-PAGE_SIZE = 5
+PAGE_SIZE = 3
 SCHEDULE_DATE_KEY = "schedule_date_by_post_id"
 PENDING_PREFS_KEY = "pending_prefs"
 
@@ -165,7 +166,31 @@ def _build_platform_keyboard(active_platform: str, offset: int) -> InlineKeyboar
             callback_data=f"pending_filter|{platform}|{offset}",
         )
 
-    return InlineKeyboardMarkup([[mk(""), mk("instagram"), mk("twitter"), mk("youtube"), mk("other")]])
+    return InlineKeyboardMarkup(
+        [
+            [mk(""), mk("instagram")],
+            [mk("twitter"), mk("youtube"), mk("other")],
+        ]
+    )
+
+
+def _build_author_keyboard(platform: str) -> InlineKeyboardMarkup:
+    """Show source account buttons for a platform (e.g. X handles)."""
+    authors = ACCOUNTS.get(platform, [])
+    rows: List[List[InlineKeyboardButton]] = [
+        [InlineKeyboardButton("All accounts", callback_data=f"pending_author|{platform}|")]
+    ]
+    row: List[InlineKeyboardButton] = []
+    for author in authors:
+        label = f"@{author}" if len(author) <= 18 else f"@{author[:15]}…"
+        row.append(InlineKeyboardButton(label, callback_data=f"pending_author|{platform}|{author}"))
+        if len(row) == 2:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    rows.append([InlineKeyboardButton("⬅ Back", callback_data="pending_menu|")])
+    return InlineKeyboardMarkup(rows)
 
 
 def _sort_label(sort_key: str) -> str:
@@ -236,6 +261,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "/youtube - pending YouTube posts\n"
         "/other - pending other platforms\n"
         "/all - pending posts from all platforms\n"
+        "/scrape - manually trigger scraping now\n"
         "/filter <text> - set your persistent pending filter\n"
         "/clearfilter - clear your persistent pending filter\n"
         "/schedule - show upcoming queue\n"
@@ -250,6 +276,27 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     )
 
 
+async def scrape_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manually trigger a scrape cycle from Telegram."""
+    del context
+    if not update.effective_message:
+        return
+    await update.effective_message.reply_text(
+        "🔄 Starting scrape cycle... This may take a few minutes.\n"
+        "I'll notify you when it's done."
+    )
+
+    def _run_scrape():
+        try:
+            from scheduler import run_scrape_cycle
+            run_scrape_cycle()
+        except Exception:
+            logger.exception("Manual scrape cycle failed.")
+
+    thread = threading.Thread(target=_run_scrape, name="manual-scrape", daemon=True)
+    thread.start()
+
+
 async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Force-stop the bot process immediately."""
     if update.effective_message:
@@ -259,25 +306,28 @@ async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def pending_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show source options first; fetch posts only after selection."""
+    """Show platform/sort options first; posts load after you pick a source."""
     if not update.effective_message:
         return
-
-    query_text = " ".join(context.args).strip().lower()
-    if not query_text:
-        # Reuse user saved filter when command is called without args.
-        existing = _get_pending_prefs(context)
-        query_text = existing["query"]
-    context.user_data[PENDING_PREFS_KEY] = {
-        "platform": "",
-        "sort": DEFAULT_SORT,
-        "query": query_text,
-    }
-    subtitle = f"\nQuery: {query_text}" if query_text else ""
-    await update.effective_message.reply_text(
-        f"Choose source and sort to view pending posts:{subtitle}",
-        reply_markup=_build_pending_controls_keyboard("", DEFAULT_SORT, 0),
-    )
+    try:
+        query_text = " ".join(context.args).strip().lower()
+        if not query_text:
+            existing = _get_pending_prefs(context)
+            query_text = existing["query"]
+        context.user_data[PENDING_PREFS_KEY] = {
+            "platform": "",
+            "author": "",
+            "sort": DEFAULT_SORT,
+            "query": query_text,
+        }
+        subtitle = f"\nFilter: {query_text}" if query_text else ""
+        await update.effective_message.reply_text(
+            f"Choose platform and sort:{subtitle}",
+            reply_markup=_build_pending_controls_keyboard("", DEFAULT_SORT, 0),
+        )
+    except Exception:
+        logger.exception("pending_command failed")
+        await update.effective_message.reply_text("⚠️ Could not open pending menu. Try again.")
 
 
 async def _open_platform_pending(
@@ -286,35 +336,21 @@ async def _open_platform_pending(
     platform: str,
     title: str,
 ) -> None:
-    """Open pending feed directly for a chosen platform command."""
+    """Open pending feed for a platform; Twitter/Insta show account picker first."""
     if not update.effective_message:
         return
-    prefs = _set_pending_prefs(context, platform=platform)
-    query_suffix = f" | Query: {prefs['query']}" if prefs["query"] else ""
-    await update.effective_message.reply_text(
-        f"{title} | Sort: {_sort_label(prefs['sort'])}{query_suffix}",
-        reply_markup=_build_pending_controls_keyboard(platform, prefs["sort"], 0),
-    )
-    filtered_posts = _apply_pending_filters(
-        posts=get_pending(),
-        platform=prefs["platform"],
-        query_text=prefs["query"],
-        sort_key=prefs["sort"],
-    )
-    total = len(filtered_posts)
-    if total == 0:
-        await update.effective_message.reply_text("No pending posts for this filter/query.")
-        return
-    page = filtered_posts[0:PAGE_SIZE]
-    for post in page:
-        await _send_post_preview_to_message(update.effective_message, post)
-    if total > PAGE_SIZE:
-        await update.effective_message.reply_text(
-            f"Showing 1-{PAGE_SIZE} of {total}.",
-            reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("Next ▶", callback_data=f"pending_filter|{platform}|{PAGE_SIZE}")]]
-            ),
-        )
+    try:
+        prefs = _set_pending_prefs(context, platform=platform, author="")
+        if platform in {"twitter", "instagram"} and ACCOUNTS.get(platform):
+            await update.effective_message.reply_text(
+                f"{title}\nPick an account:",
+                reply_markup=_build_author_keyboard(platform),
+            )
+            return
+        await _send_filtered_pending_page(update.effective_message, prefs, offset=0, header=title)
+    except Exception:
+        logger.exception("_open_platform_pending failed for platform=%s", platform)
+        await update.effective_message.reply_text("⚠️ Could not load pending posts. Try /pending again.")
 
 
 async def insta_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -514,23 +550,27 @@ def _calendar_link() -> str:
 def _get_pending_prefs(context: ContextTypes.DEFAULT_TYPE) -> Dict[str, str]:
     prefs = context.user_data.setdefault(PENDING_PREFS_KEY, {})
     platform = str(prefs.get("platform") or "")
+    author = str(prefs.get("author") or "")
     sort_key = str(prefs.get("sort") or DEFAULT_SORT)
     query_text = str(prefs.get("query") or "").strip().lower()
     if sort_key not in {SORT_NEWEST, SORT_TOP_SCORE, SORT_MOST_LIKES}:
         sort_key = DEFAULT_SORT
-    return {"platform": platform, "sort": sort_key, "query": query_text}
+    return {"platform": platform, "author": author, "sort": sort_key, "query": query_text}
 
 
 def _set_pending_prefs(
     context: ContextTypes.DEFAULT_TYPE,
     *,
     platform: Optional[str] = None,
+    author: Optional[str] = None,
     sort_key: Optional[str] = None,
     query_text: Optional[str] = None,
 ) -> Dict[str, str]:
     prefs = _get_pending_prefs(context)
     if platform is not None:
         prefs["platform"] = platform
+    if author is not None:
+        prefs["author"] = author
     if sort_key is not None:
         prefs["sort"] = sort_key if sort_key in {SORT_NEWEST, SORT_TOP_SCORE, SORT_MOST_LIKES} else DEFAULT_SORT
     if query_text is not None:
@@ -539,7 +579,13 @@ def _set_pending_prefs(
     return prefs
 
 
-def _apply_pending_filters(posts: List[Dict[str, object]], platform: str, query_text: str, sort_key: str) -> List[Dict[str, object]]:
+def _apply_pending_filters(
+    posts: List[Dict[str, object]],
+    platform: str,
+    query_text: str,
+    sort_key: str,
+    author: str = "",
+) -> List[Dict[str, object]]:
     filtered = posts
 
     if platform == "other":
@@ -547,6 +593,10 @@ def _apply_pending_filters(posts: List[Dict[str, object]], platform: str, query_
         filtered = [p for p in filtered if str(p.get("platform", "")).lower() not in known]
     elif platform:
         filtered = [p for p in filtered if str(p.get("platform", "")).lower() == platform]
+
+    if author:
+        author_l = author.lower()
+        filtered = [p for p in filtered if str(p.get("author", "")).lower() == author_l]
 
     if query_text:
         q = query_text.lower()
@@ -567,6 +617,53 @@ def _apply_pending_filters(posts: List[Dict[str, object]], platform: str, query_
         filtered.sort(key=lambda p: str(p.get("created_at", "")), reverse=True)
 
     return filtered
+
+
+async def _send_filtered_pending_page(
+    message: Message,
+    prefs: Dict[str, str],
+    offset: int,
+    header: str = "Pending posts",
+) -> None:
+    """Send one page of filtered pending posts with navigation."""
+    filtered_posts = _apply_pending_filters(
+        posts=get_pending(),
+        platform=prefs["platform"],
+        query_text=prefs["query"],
+        sort_key=prefs["sort"],
+        author=prefs.get("author", ""),
+    )
+    total = len(filtered_posts)
+    author_suffix = f" | @{prefs['author']}" if prefs.get("author") else ""
+    query_suffix = f" | query: {prefs['query']}" if prefs.get("query") else ""
+    await message.reply_text(
+        f"{header}{author_suffix}\nSort: {_sort_label(prefs['sort'])}{query_suffix}",
+        reply_markup=_build_pending_controls_keyboard(prefs["platform"], prefs["sort"], offset),
+    )
+    if total == 0:
+        await message.reply_text("No pending posts for this filter.")
+        return
+
+    bounded_offset = max(0, min(offset, max(0, total - 1)))
+    page = filtered_posts[bounded_offset : bounded_offset + PAGE_SIZE]
+    for post in page:
+        await _send_post_preview_to_message(message, post)
+
+    next_offset = bounded_offset + PAGE_SIZE
+    nav_rows: List[List[InlineKeyboardButton]] = []
+    platform = prefs["platform"]
+    if bounded_offset > 0:
+        prev_offset = max(0, bounded_offset - PAGE_SIZE)
+        nav_rows.append(
+            [InlineKeyboardButton("◀ Prev", callback_data=f"pending_filter|{platform}|{prev_offset}")]
+        )
+    if next_offset < total:
+        nav_rows.append([InlineKeyboardButton("Next ▶", callback_data=f"pending_filter|{platform}|{next_offset}")])
+    if nav_rows:
+        await message.reply_text(
+            f"Showing {bounded_offset + 1}-{min(next_offset, total)} of {total}.",
+            reply_markup=InlineKeyboardMarkup(nav_rows),
+        )
 
 
 async def _send_pending_page(message: Message, platform: str, offset: int) -> None:
@@ -621,7 +718,19 @@ async def _send_post_preview_to_message(message: Message, post: Dict[str, object
         except Exception:
             logger.exception("Failed to send media preview for post %s", post.get("id"))
 
-    await message.reply_text(text=text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
+    try:
+        await message.reply_text(text=text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
+    except Exception:
+        logger.exception("Markdown preview failed for post %s, falling back to plain text", post.get("id"))
+        plain = "\n".join(
+            [
+                f"{post.get('platform', '').title()} | @{post.get('author', 'unknown')}",
+                f"Score: {float(post.get('engagement_score', 0) or 0):.1f}/100",
+                "",
+                _truncate_content(str(post.get("content", "")), 350),
+            ]
+        )
+        await message.reply_text(text=plain, reply_markup=reply_markup)
 
 
 async def _send_post_preview(update: Update, post: Dict[str, object]) -> None:
@@ -650,6 +759,7 @@ async def _move_to_next_pending(query: object, context: ContextTypes.DEFAULT_TYP
         platform=prefs["platform"],
         query_text=prefs["query"],
         sort_key=prefs["sort"],
+        author=prefs.get("author", ""),
     )
     if not remaining:
         await message.reply_text("No more pending posts. You're all caught up.")
@@ -669,45 +779,46 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     parts = _parse_callback(data)
 
     try:
+        if parts[0] == "pending_menu":
+            if not query.message:
+                return
+            prefs = _get_pending_prefs(context)
+            await query.message.reply_text(
+                "Choose platform and sort:",
+                reply_markup=_build_pending_controls_keyboard(prefs["platform"], prefs["sort"], 0),
+            )
+            return
+
+        if parts[0] == "pending_author" and len(parts) >= 2:
+            platform = parts[1]
+            author = parts[2] if len(parts) >= 3 else ""
+            if not query.message:
+                return
+            prefs = _set_pending_prefs(context, platform=platform, author=author)
+            title = f"{_platform_label(platform)} pending posts"
+            if author:
+                title = f"@{author} pending posts"
+            await _send_filtered_pending_page(query.message, prefs, offset=0, header=title)
+            return
+
         if parts[0] == "pending_filter" and len(parts) == 3:
             platform = parts[1]
             offset = int(parts[2])
             if not query.message:
                 return
-            prefs = _set_pending_prefs(context, platform=platform)
-            await query.message.reply_text(
-                f"Filter: {_platform_label(platform)} | Sort: {_sort_label(prefs['sort'])}",
-                reply_markup=_build_pending_controls_keyboard(platform, prefs["sort"], 0),
-            )
-            filtered_posts = _apply_pending_filters(
-                posts=get_pending(),
-                platform=prefs["platform"],
-                query_text=prefs["query"],
-                sort_key=prefs["sort"],
-            )
-            total = len(filtered_posts)
-            if total == 0:
-                await query.message.reply_text("No pending posts for this filter/query.")
-                return
-            bounded_offset = max(0, min(offset, max(0, total - 1)))
-            page = filtered_posts[bounded_offset : bounded_offset + PAGE_SIZE]
-            for post in page:
-                await _send_post_preview_to_message(query.message, post)
-
-            next_offset = bounded_offset + PAGE_SIZE
-            nav_rows: List[List[InlineKeyboardButton]] = []
-            if bounded_offset > 0:
-                prev_offset = max(0, bounded_offset - PAGE_SIZE)
-                nav_rows.append(
-                    [InlineKeyboardButton("◀ Prev", callback_data=f"pending_filter|{platform}|{prev_offset}")]
-                )
-            if next_offset < total:
-                nav_rows.append([InlineKeyboardButton("Next ▶", callback_data=f"pending_filter|{platform}|{next_offset}")])
-            if nav_rows:
+            prefs = _set_pending_prefs(context, platform=platform, author="")
+            if offset == 0 and platform in {"twitter", "instagram"} and ACCOUNTS.get(platform):
                 await query.message.reply_text(
-                    f"Showing {bounded_offset + 1}-{min(next_offset, total)} of {total}.",
-                    reply_markup=InlineKeyboardMarkup(nav_rows),
+                    f"Filter: {_platform_label(platform)}\nPick an account:",
+                    reply_markup=_build_author_keyboard(platform),
                 )
+                return
+            await _send_filtered_pending_page(
+                query.message,
+                prefs,
+                offset=offset,
+                header=f"{_platform_label(platform)} pending posts",
+            )
             return
 
         if parts[0] == "pending_sort" and len(parts) == 2:
@@ -875,6 +986,7 @@ def register_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("pending", pending_command))
+    application.add_handler(CommandHandler("panding", pending_command))
     application.add_handler(CommandHandler("insta", insta_command))
     application.add_handler(CommandHandler("twitter", twitter_command))
     application.add_handler(CommandHandler("youtube", youtube_command))
@@ -889,5 +1001,6 @@ def register_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("cancel", cancel_command))
     application.add_handler(CommandHandler("status", status_command))
     application.add_handler(CommandHandler("settime", settime_command))
+    application.add_handler(CommandHandler("scrape", scrape_command))
     application.add_handler(CommandHandler("stop", stop_command))
     application.add_handler(CallbackQueryHandler(callback_router))

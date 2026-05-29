@@ -20,7 +20,14 @@ from database import save_post
 
 logger = logging.getLogger(__name__)
 
-NITTER_HOSTS = ("https://nitter.net", "https://nitter.privacydev.net")
+NITTER_HOSTS = (
+    "https://nitter.net",
+    "https://nitter.privacydev.net",
+    "https://nitter.poast.org",
+    "https://nitter.woodland.cafe",
+    "https://nitter.1d4.us",
+    "https://nitter.kavin.rocks",
+)
 
 
 def _extract_counts(text: str) -> Dict[str, int]:

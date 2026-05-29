@@ -13,16 +13,24 @@ load_dotenv()
 ACCOUNTS: Dict[str, List[str]] = {
     "instagram": [
         "codeandcomplexity",
+        "rcsnotes",
         # Add more Instagram usernames to monitor:
         # "therock", "selenagomez", etc.
     ],
     "twitter": [
+        "shobhittt007",
+        "Byte_Nomadd",
+        "dharanshi_",
+        "KarthikNagpuri",
+        "khushiirl",
         "PratikSinhatwt",
-        # Add more Twitter/X usernames to monitor:
-        # "elonmusk", "naval", etc.
+        "nick_realm_01",
+        "_Chandan_17",
     ],
     "youtube": [
         # Add YouTube usernames or channel handles to monitor:
+        "mkbhd",
+        "veritasium",
         # "mkbhd", "veritasium", etc.
     ],
 }

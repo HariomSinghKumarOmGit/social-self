@@ -71,6 +71,22 @@
       color: var(--accent);
     }
     .topbar-right { display: flex; gap: 10px; align-items: center; }
+    .scrape-btn {
+      background: rgba(45, 212, 168, 0.12);
+      border: 1px solid rgba(45, 212, 168, 0.35);
+      color: var(--green);
+      border-radius: 999px;
+      padding: 7px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .scrape-btn:hover:not(:disabled) {
+      background: rgba(45, 212, 168, 0.2);
+      border-color: var(--green);
+    }
+    .scrape-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 
     /* ── Filter Bar ── */
     .filter-bar {
@@ -125,6 +141,13 @@
       font-size: 12px;
       outline: none;
     }
+    .author-bar {
+      display: flex;
+      gap: 6px;
+      padding: 0 28px 12px;
+      flex-wrap: wrap;
+    }
+    .author-bar.hidden { display: none; }
     .stats-summary {
       margin-left: auto;
       display: flex;
@@ -477,6 +500,7 @@
       <a href="/feed" class="active">📊 Feed</a>
     </div>
     <div class="topbar-right">
+      <button type="button" class="scrape-btn" id="runScraperBtn">🔄 Run Scraper</button>
       <div id="totalBadge" style="font-size:12px;color:var(--text-dim);">Loading...</div>
     </div>
   </nav>
@@ -492,12 +516,17 @@
     </div>
     <select class="sort-select" id="sortSelect">
       <option value="newest">Newest first</option>
+      <option value="interaction">Most interaction</option>
       <option value="score">Highest score</option>
       <option value="likes">Most likes</option>
+      <option value="comments">Most comments</option>
       <option value="views">Most views</option>
     </select>
     <div class="stats-summary" id="statsSummary"></div>
   </div>
+
+  <!-- X / Twitter account filters -->
+  <div class="author-bar hidden" id="authorBar"></div>
 
   <!-- Post Feed -->
   <div class="feed-container" id="feedContainer">
@@ -518,7 +547,9 @@
   <script>
     // ── State ──
     let allPosts = [];
+    let sourceAccounts = {};
     let currentPlatform = '';
+    let currentAuthor = '';
     let currentSearch = '';
     let currentSort = 'newest';
 
@@ -556,6 +587,50 @@
       if (platform === 'twitter') return '🔗';
       if (platform === 'youtube') return '🔗';
       return '🔗';
+    }
+
+    function fmtDate(iso) {
+      if (!iso) return '';
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return iso.slice(0, 16).replace('T', ' ');
+      return d.toLocaleString(undefined, {
+        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+      });
+    }
+
+    function interactionScore(post) {
+      const likes = Number(post.likes || 0);
+      const comments = Number(post.comments || 0);
+      const shares = Number(post.shares || 0);
+      const saves = Number(post.saves || 0);
+      const views = Number(post.views || 0);
+      return likes + comments * 3 + shares * 2 + saves * 2 + views * 0.01;
+    }
+
+    function renderAuthorBar() {
+      const bar = document.getElementById('authorBar');
+      const authors = sourceAccounts[currentPlatform] || [];
+      if (!currentPlatform || !authors.length) {
+        bar.classList.add('hidden');
+        bar.innerHTML = '';
+        return;
+      }
+      bar.classList.remove('hidden');
+      const buttons = [
+        `<button class="pill-btn ${currentAuthor ? '' : 'active'}" data-author="">All accounts</button>`,
+        ...authors.map(a => {
+          const active = currentAuthor.toLowerCase() === a.toLowerCase() ? 'active' : '';
+          return `<button class="pill-btn tw ${active}" data-author="${a}">@${a}</button>`;
+        })
+      ].join('');
+      bar.innerHTML = buttons;
+      bar.querySelectorAll('.pill-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          currentAuthor = btn.dataset.author || '';
+          renderAuthorBar();
+          renderFeed();
+        });
+      });
     }
 
     function scoreClass(score) {
@@ -617,7 +692,7 @@
             <div class="platform-badge ${p}">${PLATFORM_ICONS[p] || '📝'}</div>
             <div class="post-meta">
               <div class="author">@${post.author || 'unknown'}</div>
-              <div class="platform-name">${PLATFORM_NAMES[p] || p}</div>
+              <div class="platform-name">${PLATFORM_NAMES[p] || p} · ${fmtDate(post.created_at)}</div>
             </div>
             <div class="post-score ${scoreClass(score)}">${score.toFixed(1)}</div>
           </div>
@@ -652,6 +727,11 @@
         filtered = filtered.filter(p => (p.platform || '').toLowerCase() === currentPlatform);
       }
 
+      // Filter by author account
+      if (currentAuthor) {
+        filtered = filtered.filter(p => (p.author || '').toLowerCase() === currentAuthor.toLowerCase());
+      }
+
       // Filter by search
       if (currentSearch) {
         const q = currentSearch.toLowerCase();
@@ -663,10 +743,14 @@
       }
 
       // Sort
-      if (currentSort === 'score') {
+      if (currentSort === 'interaction') {
+        filtered.sort((a, b) => interactionScore(b) - interactionScore(a));
+      } else if (currentSort === 'score') {
         filtered.sort((a, b) => Number(b.engagement_score || 0) - Number(a.engagement_score || 0));
       } else if (currentSort === 'likes') {
         filtered.sort((a, b) => Number(b.likes || 0) - Number(a.likes || 0));
+      } else if (currentSort === 'comments') {
+        filtered.sort((a, b) => Number(b.comments || 0) - Number(a.comments || 0));
       } else if (currentSort === 'views') {
         filtered.sort((a, b) => Number(b.views || 0) - Number(a.views || 0));
       } else {
@@ -852,8 +936,14 @@
     // ── Load Data ──
     async function loadPosts() {
       try {
-        allPosts = await fetchJson('/api/posts/feed');
+        const [posts, accounts] = await Promise.all([
+          fetchJson('/api/posts/feed'),
+          fetchJson('/api/source-accounts'),
+        ]);
+        allPosts = posts;
+        sourceAccounts = accounts || {};
         document.getElementById('totalBadge').textContent = `${allPosts.length} posts`;
+        renderAuthorBar();
         renderFeed();
       } catch (e) {
         document.getElementById('feedContainer').innerHTML =
@@ -867,6 +957,8 @@
         document.querySelectorAll('.pill-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         currentPlatform = btn.dataset.platform;
+        currentAuthor = '';
+        renderAuthorBar();
         renderFeed();
       });
     });
@@ -880,6 +972,45 @@
       currentSort = e.target.value;
       renderFeed();
     });
+
+    // ── Scraper ──
+    let scrapePollTimer = null;
+
+    async function pollScrapeStatus() {
+      const st = await fetchJson('/api/scrape/status');
+      const btn = document.getElementById('runScraperBtn');
+      if (st.running) {
+        btn.disabled = true;
+        btn.textContent = '⏳ Scraping…';
+        return;
+      }
+      btn.disabled = false;
+      btn.textContent = '🔄 Run Scraper';
+      if (scrapePollTimer) {
+        clearInterval(scrapePollTimer);
+        scrapePollTimer = null;
+      }
+      if (st.last_error) {
+        alert('Scraper failed: ' + st.last_error);
+      } else if (st.last_finished) {
+        await loadPosts();
+      }
+    }
+
+    document.getElementById('runScraperBtn').onclick = async () => {
+      const btn = document.getElementById('runScraperBtn');
+      btn.disabled = true;
+      btn.textContent = '⏳ Starting…';
+      const res = await fetchJson('/api/scrape', { method: 'POST' });
+      if (!res.ok) {
+        alert(res.error || 'Could not start scraper.');
+        btn.disabled = false;
+        btn.textContent = '🔄 Run Scraper';
+        return;
+      }
+      scrapePollTimer = setInterval(pollScrapeStatus, 4000);
+      pollScrapeStatus();
+    };
 
     // ── Init ──
     loadPosts();

@@ -28,7 +28,7 @@ BANNER = r"""
 ║  Components:                                             ║
 ║    📅  Flask Calendar UI        http://{ip}:5001      ║
 ║    🤖  Telegram Bot             polling mode             ║
-║    ⏱️   Scheduler                scrape@08:00 + hourly   ║
+║    ⏱️   Scheduler                scrape every 24h       ║
 ╠═══════════════════════════════════════════════════════════╣
 ║  Press Ctrl+C to shut down gracefully.                   ║
 ╚═══════════════════════════════════════════════════════════╝

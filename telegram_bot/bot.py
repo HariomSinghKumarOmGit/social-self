@@ -9,6 +9,7 @@ import logging
 import sys
 from pathlib import Path
 
+from telegram import Update
 from telegram.ext import Application, ContextTypes
 from telegram.error import Conflict
 
@@ -31,8 +32,7 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 
 async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Log unhandled bot errors without crashing polling."""
-    del update
+    """Log unhandled bot errors and notify the user when possible."""
     if isinstance(context.error, Conflict):
         logger.error(
             "Telegram polling conflict (another bot instance is running). "
@@ -46,6 +46,11 @@ async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> 
             await context.application.shutdown()
         return
     logger.exception("Unhandled telegram error: %s", context.error)
+    if isinstance(update, Update) and update.effective_message:
+        try:
+            await update.effective_message.reply_text("⚠️ Something went wrong. Try /pending again.")
+        except Exception:
+            logger.exception("Failed to send error notice to Telegram user.")
 
 
 def build_application() -> Application:

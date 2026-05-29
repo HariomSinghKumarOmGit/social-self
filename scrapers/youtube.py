@@ -74,6 +74,34 @@ def _fetch_feed(url: str, retries: int = 3) -> Optional[feedparser.FeedParserDic
             time.sleep(backoff + random.uniform(0.2, 0.8))
     return None
 
+def _resolve_channel_id(handle: str) -> Optional[str]:
+    """Resolve a YouTube @handle or username to a channel ID by scraping the page."""
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+        )
+    }
+    for url in [f"https://www.youtube.com/@{handle}", f"https://www.youtube.com/c/{handle}"]:
+        try:
+            resp = requests.get(url, headers=headers, timeout=15)
+            if resp.status_code != 200:
+                continue
+            # Look for channel_id in meta tags or page source
+            match = re.search(r'"channelId"\s*:\s*"(UC[a-zA-Z0-9_-]+)"', resp.text)
+            if not match:
+                match = re.search(r'channel_id=(UC[a-zA-Z0-9_-]+)', resp.text)
+            if not match:
+                match = re.search(r'<meta\s+itemprop="channelId"\s+content="(UC[a-zA-Z0-9_-]+)"', resp.text)
+            if match:
+                channel_id = match.group(1)
+                logger.info("Resolved YouTube handle @%s -> %s", handle, channel_id)
+                return channel_id
+        except Exception:
+            logger.debug("Failed resolving YouTube handle @%s via %s", handle, url)
+    logger.warning("Could not resolve YouTube channel ID for: %s", handle)
+    return None
+
 
 def scrape_youtube() -> List[Dict[str, object]]:
     """Scrape recent YouTube entries for configured accounts and save to DB."""
@@ -81,9 +109,27 @@ def scrape_youtube() -> List[Dict[str, object]]:
     saved_items: List[Dict[str, object]] = []
 
     for username in ACCOUNTS.get("youtube", []):
-        feed_url = f"https://www.youtube.com/feeds/videos.xml?user={username}"
-        feed = _fetch_feed(feed_url)
-        if not feed:
+        # Try multiple RSS URL formats — modern channels use @handle
+        feed = None
+        feed_urls = [
+            f"https://www.youtube.com/feeds/videos.xml?user={username}",
+            f"https://www.youtube.com/feeds/videos.xml?channel_id={username}",
+        ]
+        for feed_url in feed_urls:
+            feed = _fetch_feed(feed_url)
+            if feed and feed.entries:
+                break
+
+        # If RSS failed, try resolving @handle to channel ID
+        if not feed or not getattr(feed, "entries", []):
+            channel_id = _resolve_channel_id(username)
+            if channel_id:
+                feed = _fetch_feed(
+                    f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
+                )
+
+        if not feed or not getattr(feed, "entries", []):
+            logger.warning("YouTube: no feed entries found for %s", username)
             continue
 
         for entry in feed.entries:

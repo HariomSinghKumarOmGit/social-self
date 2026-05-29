@@ -1,18 +1,19 @@
 # Module: database | Purpose: SQLite storage and post state transitions.
 # Public API: init_db, save_post, get_pending, get_post_by_id, approve_post, reject_post, get_scheduled, mark_posted, get_posts_feed,
 #             get_managed_accounts, add_managed_account, delete_managed_account, set_target_account,
-#             get_default_time, set_default_time, format_time_display, get_time_slots, get_preferences
+#             get_default_time, set_default_time, format_time_display, get_time_slots, get_preferences,
+#             delete_posts_older_than_days
 
 from __future__ import annotations
 
 import logging
 import sqlite3
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from config import POST_TIMES
+from config import ACCOUNTS
 
 DB_PATH = Path("agent.db")
 
@@ -104,10 +105,29 @@ def init_db() -> None:
                 )
                 _ensure_posts_columns(conn)
                 _backfill_scheduled_date(conn)
+                _sync_source_accounts_from_config(conn)
         logger.info("Database initialized at %s", DB_PATH.resolve())
     except sqlite3.Error:
         logger.exception("Failed to initialize database.")
         raise
+
+
+def _sync_source_accounts_from_config(conn: sqlite3.Connection) -> None:
+    """Ensure configured scrape accounts exist as managed source accounts."""
+    now = _utc_now_iso()
+    for platform, usernames in ACCOUNTS.items():
+        for username in usernames:
+            if not username:
+                continue
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO managed_accounts (
+                    account_type, platform, username, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                ("source", platform, username.strip(), now, now),
+            )
 
 
 def _ensure_posts_columns(conn: sqlite3.Connection) -> None:
@@ -634,6 +654,30 @@ def add_managed_account(account_type: str, platform: str, username: str) -> bool
         return bool(result and int(result[0]) > 0)
     except sqlite3.Error:
         logger.exception("Failed to add managed account.")
+        raise
+
+
+def delete_posts_older_than_days(days: int) -> int:
+    """Delete posts older than the given number of days (by created_at). Returns rows removed."""
+    if days < 1:
+        raise ValueError("days must be at least 1")
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    try:
+        with closing(_get_connection()) as conn:
+            with conn:
+                cursor = conn.execute(
+                    """
+                    DELETE FROM posts
+                    WHERE created_at < ?
+                    """,
+                    (cutoff,),
+                )
+        deleted = int(cursor.rowcount)
+        if deleted:
+            logger.info("Deleted %s posts older than %s days (before %s).", deleted, days, cutoff)
+        return deleted
+    except sqlite3.Error:
+        logger.exception("Failed to delete posts older than %s days.", days)
         raise
 
 

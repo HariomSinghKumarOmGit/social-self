@@ -3,18 +3,21 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
+import threading
+from datetime import datetime, timezone
 
 # Ensure the project root is on the Python path so sibling modules are importable.
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 from flask import Flask, jsonify, render_template, request
 from flask_cors import CORS
 
+from config import ACCOUNTS, LOOKBACK_DAYS
 from database import (
     add_managed_account,
     delete_managed_account,
@@ -33,6 +36,56 @@ from database import (
 
 app = Flask(__name__)
 CORS(app)
+logger = logging.getLogger(__name__)
+
+_scrape_lock = threading.Lock()
+_scrape_state: Dict[str, Any] = {
+    "running": False,
+    "last_started": None,
+    "last_finished": None,
+    "last_error": None,
+    "last_deleted": 0,
+    "last_new_posts": None,
+}
+
+
+def _ensure_background_scheduler() -> None:
+    """Start 24h scrape + hourly post scheduler when web UI runs standalone."""
+    if getattr(_ensure_background_scheduler, "_started", False):
+        return
+    try:
+        from scheduler import start_scheduler_thread
+
+        start_scheduler_thread()
+        _ensure_background_scheduler._started = True  # type: ignore[attr-defined]
+        logger.info("Background scheduler started (scrape every 24h).")
+    except Exception:
+        logger.exception("Failed to start background scheduler.")
+
+
+def _run_scrape_job() -> None:
+    """Background worker for manual scrape requests."""
+    with _scrape_lock:
+        _scrape_state["running"] = True
+        _scrape_state["last_started"] = datetime.now(timezone.utc).isoformat()
+        _scrape_state["last_error"] = None
+    try:
+        from scheduler import run_scrape_cycle
+
+        run_scrape_cycle()
+        with _scrape_lock:
+            _scrape_state["last_finished"] = datetime.now(timezone.utc).isoformat()
+    except Exception as exc:
+        logger.exception("Manual scrape failed.")
+        with _scrape_lock:
+            _scrape_state["last_error"] = str(exc)
+            _scrape_state["last_finished"] = datetime.now(timezone.utc).isoformat()
+    finally:
+        with _scrape_lock:
+            _scrape_state["running"] = False
+
+
+_ensure_background_scheduler()
 
 
 @app.get("/")
@@ -130,14 +183,48 @@ def api_post_now() -> Any:
 def api_status() -> Any:
     """Return simple operational status summary."""
     scheduled = get_scheduled()
+    with _scrape_lock:
+        scrape_info = dict(_scrape_state)
     return jsonify(
         {
             "ok": True,
-            "now": datetime.utcnow().isoformat(),
+            "now": datetime.now(timezone.utc).isoformat(),
             "scheduled_count": len(scheduled),
             "today_posted": 0,
+            "scrape": scrape_info,
+            "retention_days": LOOKBACK_DAYS,
         }
     )
+
+
+@app.post("/api/scrape")
+def api_scrape() -> Any:
+    """Trigger scrape + cleanup in a background thread."""
+    with _scrape_lock:
+        if _scrape_state["running"]:
+            return jsonify({"ok": False, "error": "Scraper is already running."}), 409
+    thread = threading.Thread(target=_run_scrape_job, name="web-scrape", daemon=True)
+    thread.start()
+    return jsonify(
+        {
+            "ok": True,
+            "message": "Scraper started. This may take a few minutes.",
+            "retention_days": LOOKBACK_DAYS,
+        }
+    )
+
+
+@app.get("/api/scrape/status")
+def api_scrape_status() -> Any:
+    """Return current scrape job status."""
+    with _scrape_lock:
+        return jsonify({"ok": True, **dict(_scrape_state), "retention_days": LOOKBACK_DAYS})
+
+
+@app.get("/api/source-accounts")
+def api_source_accounts() -> Any:
+    """Return configured scrape source accounts grouped by platform."""
+    return jsonify(ACCOUNTS)
 
 
 @app.get("/api/accounts")

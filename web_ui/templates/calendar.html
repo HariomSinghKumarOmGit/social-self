@@ -65,6 +65,7 @@
             <option value="youtube">YouTube</option>
           </select>
           <button type="button" onclick="window.location.href='/feed'">📊 Feed</button>
+          <button type="button" id="runScraperBtn">🔄 Run Scraper</button>
           <div class="status-pill" id="statusBadge">Loading...</div>
         </div>
       </header>
@@ -277,6 +278,46 @@
     };
     document.getElementById('composeScheduleBtn').onclick = () => alert('Draft saved locally in UI.');
     document.getElementById('composePublishBtn').onclick = () => alert('Use a scheduled card and Post Now for real posting flow.');
+
+    let scrapePollTimer = null;
+
+    async function pollScrapeStatus() {
+      const st = await fetchJson('/api/scrape/status');
+      const btn = document.getElementById('runScraperBtn');
+      if (!btn) return;
+      if (st.running) {
+        btn.disabled = true;
+        btn.textContent = '⏳ Scraping…';
+        return;
+      }
+      btn.disabled = false;
+      btn.textContent = '🔄 Run Scraper';
+      if (scrapePollTimer) {
+        clearInterval(scrapePollTimer);
+        scrapePollTimer = null;
+      }
+      if (st.last_error) {
+        alert('Scraper failed: ' + st.last_error);
+      } else if (st.last_finished) {
+        await loadTotalPosts();
+        await loadScheduled();
+      }
+    }
+
+    document.getElementById('runScraperBtn').onclick = async () => {
+      const btn = document.getElementById('runScraperBtn');
+      btn.disabled = true;
+      btn.textContent = '⏳ Starting…';
+      const res = await fetchJson('/api/scrape', { method: 'POST' });
+      if (!res.ok) {
+        alert(res.error || 'Could not start scraper.');
+        btn.disabled = false;
+        btn.textContent = '🔄 Run Scraper';
+        return;
+      }
+      scrapePollTimer = setInterval(pollScrapeStatus, 4000);
+      pollScrapeStatus();
+    };
 
     (async function init() {
       await loadStatus();
