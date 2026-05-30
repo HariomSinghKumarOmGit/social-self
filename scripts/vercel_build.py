@@ -29,7 +29,11 @@ def main() -> None:
         print("review-ui missing — skip frontend build")
         return
     npm = "npm.cmd" if sys.platform == "win32" else "npm"
-    subprocess.run([npm, "ci"], cwd=REVIEW, check=True)
+    # Use npm install instead of npm ci to avoid lock file version mismatch
+    # between npm v10 (Railway) and npm v11 (local dev).
+    # Skip install entirely if node_modules already exists (nixpacks install phase ran it).
+    if not (REVIEW / "node_modules").exists():
+        subprocess.run([npm, "install"], cwd=REVIEW, check=True)
     subprocess.run([npm, "run", "build"], cwd=REVIEW, check=True)
     dist = REVIEW / "dist" / "index.html"
     if not dist.exists():
