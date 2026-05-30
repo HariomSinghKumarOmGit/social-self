@@ -25,7 +25,12 @@ def _resolve_db_path() -> Path:
     override = os.environ.get("DATABASE_PATH", "").strip()
     if override:
         return Path(override)
-    if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+    if (
+        os.environ.get("VERCEL")
+        or os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
+        or os.environ.get("RAILWAY_ENVIRONMENT")
+        or os.environ.get("RAILWAY_PUBLIC_DOMAIN")
+    ):
         return Path("/tmp/agent.db")
     return _PROJECT_ROOT / "agent.db"
 
