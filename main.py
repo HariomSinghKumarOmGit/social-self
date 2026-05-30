@@ -27,7 +27,7 @@ BANNER = r"""
 ║           🧠  SOCIAL MEDIA AUTOMATION AGENT  🧠          ║
 ╠═══════════════════════════════════════════════════════════╣
 ║  Components:                                             ║
-║    📅  Flask Calendar UI        http://{ip}:5001      ║
+║    📅  Flask Calendar UI        http://{ip}:{port}      ║
 ║    🤖  Telegram Bot             polling mode             ║
 ║    ⏱️   Scheduler                scrape every 24h       ║
 ╠═══════════════════════════════════════════════════════════╣
@@ -64,6 +64,9 @@ def _start_flask() -> None:
 
 def _start_telegram_bot() -> None:
     """Run Telegram bot polling in a daemon thread (thread-safe version)."""
+    if os.environ.get("TELEGRAM_POLLING_ENABLED", "1").lower() in {"0", "false", "no"}:
+        logger.info("Telegram bot polling disabled by TELEGRAM_POLLING_ENABLED.")
+        return
     try:
         from telegram_bot.bot import run_bot_in_thread
 
@@ -98,11 +101,12 @@ def _shutdown_handler(signum, frame):
 def main() -> NoReturn:
     """Launch all three subsystems and wait for shutdown."""
     os.environ["SOCIAL_AGENT_EMBEDDED_BOT"] = "1"
+    os.environ["SOCIAL_AGENT_EMBEDDED_SCHEDULER"] = "1"
     signal.signal(signal.SIGINT, _shutdown_handler)
     signal.signal(signal.SIGTERM, _shutdown_handler)
 
     ip = _get_local_ip()
-    print(BANNER.format(ip=ip))
+    print(BANNER.format(ip=ip, port=os.environ.get("PORT", "5001")))
 
     threads = [
         threading.Thread(target=_start_flask, name="flask-ui", daemon=True),

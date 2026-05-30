@@ -91,8 +91,9 @@ def _run_scrape_job() -> None:
             _scrape_state["running"] = False
 
 
-# Background scheduler only for local/long-running processes (not Vercel serverless).
-if not os.environ.get("VERCEL"):
+# Background scheduler only for local/long-running standalone web processes.
+# main.py owns the scheduler in embedded deployments to avoid duplicate jobs.
+if not os.environ.get("VERCEL") and os.environ.get("SOCIAL_AGENT_EMBEDDED_SCHEDULER") != "1":
     _ensure_background_scheduler()
 
 

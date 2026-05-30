@@ -8,6 +8,7 @@ import logging
 import os
 import sys
 from pathlib import Path
+from typing import IO
 
 from telegram import Update
 from telegram.ext import Application, ContextTypes
@@ -30,6 +31,36 @@ logger = logging.getLogger(__name__)
 # Avoid printing Telegram API URLs (they include bot token).
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
+
+_polling_lock_file: IO[str] | None = None
+
+
+def _acquire_polling_lock() -> bool:
+    """Hold a per-machine lock so this checkout starts only one polling loop."""
+    global _polling_lock_file
+    if _polling_lock_file is not None:
+        return True
+    if os.name != "posix":
+        return True
+
+    import fcntl
+
+    lock_path = Path(os.environ.get("TELEGRAM_POLLING_LOCK_PATH", "/tmp/social_self_telegram_bot.lock"))
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_file = lock_path.open("w", encoding="utf-8")
+    try:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        lock_file.close()
+        logger.warning("Telegram bot polling already running in this container; skipping startup.")
+        return False
+
+    lock_file.seek(0)
+    lock_file.truncate()
+    lock_file.write(str(os.getpid()))
+    lock_file.flush()
+    _polling_lock_file = lock_file
+    return True
 
 
 async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -67,9 +98,17 @@ def build_application() -> Application:
 
 def run_bot() -> None:
     """Start long-polling bot process (main thread only — uses signal handlers)."""
+    if not _acquire_polling_lock():
+        return
     application = build_application()
     logger.info("Telegram bot started in polling mode.")
-    application.run_polling(drop_pending_updates=True)
+    try:
+        application.run_polling(drop_pending_updates=True)
+    except Conflict:
+        logger.error(
+            "Telegram polling conflict: another deployed/local instance is already calling "
+            "getUpdates for this token. Stop the other instance or disable polling here."
+        )
 
 
 def run_bot_in_thread() -> None:
@@ -82,16 +121,32 @@ def run_bot_in_thread() -> None:
     """
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
+    if not _acquire_polling_lock():
+        loop.close()
+        return
     application = build_application()
 
     async def _run() -> None:
         await application.initialize()
-        await application.start()
-        await application.updater.start_polling(drop_pending_updates=True)
-        logger.info("Telegram bot started (thread-safe polling).")
-        # Block forever until the loop is stopped externally
-        stop_event = asyncio.Event()
-        await stop_event.wait()
+        try:
+            await application.start()
+            await application.updater.start_polling(drop_pending_updates=True)
+            logger.info("Telegram bot started (thread-safe polling).")
+            # Block forever until the loop is stopped externally
+            stop_event = asyncio.Event()
+            await stop_event.wait()
+        except Conflict:
+            logger.error(
+                "Telegram polling conflict: another deployed/local instance is already calling "
+                "getUpdates for this token. Web UI will keep running without this bot poller."
+            )
+        finally:
+            updater = application.updater
+            if updater and getattr(updater, "running", False):
+                await updater.stop()
+            if getattr(application, "running", False):
+                await application.stop()
+            await application.shutdown()
 
     try:
         loop.run_until_complete(_run())
