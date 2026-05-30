@@ -4,6 +4,7 @@ feedparser
 python-telegram-bot
 flask
 flask-cors
+gunicorn
 schedule
 python-dotenv
 requests
