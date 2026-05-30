@@ -44,6 +44,12 @@ app = Flask(__name__)
 CORS(app)
 logger = logging.getLogger(__name__)
 
+
+@app.before_request
+def log_request_marker() -> None:
+    """Emit an app-level marker so Railway proxy misses are easy to identify."""
+    logger.info("HTTP request reached Flask: %s %s host=%s", request.method, request.path, request.host)
+
 _scrape_lock = threading.Lock()
 _scrape_state: Dict[str, Any] = {
     "running": False,
@@ -116,7 +122,7 @@ def favicon() -> Any:
 
 
 @app.get("/")
-def index() -> str:
+def index() -> Any:
     """Render dashboard UI."""
     return render_template("calendar.html")
 
