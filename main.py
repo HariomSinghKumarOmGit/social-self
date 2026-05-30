@@ -53,6 +53,16 @@ def _get_local_ip() -> str:
 _shutdown_event = threading.Event()
 
 
+def _telegram_polling_enabled() -> bool:
+    """Decide whether this process should own Telegram long polling."""
+    raw = os.environ.get("TELEGRAM_POLLING_ENABLED")
+    if raw is None and (os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_PUBLIC_DOMAIN")):
+        return False
+    if raw is None:
+        return True
+    return raw.lower() not in {"0", "false", "no"}
+
+
 def _start_flask() -> None:
     """Run Flask as the foreground HTTP server."""
     from web_ui.app import app
@@ -64,7 +74,7 @@ def _start_flask() -> None:
 
 def _start_telegram_bot() -> None:
     """Run Telegram bot polling in a daemon thread (thread-safe version)."""
-    if os.environ.get("TELEGRAM_POLLING_ENABLED", "1").lower() in {"0", "false", "no"}:
+    if not _telegram_polling_enabled():
         logger.info("Telegram bot polling disabled by TELEGRAM_POLLING_ENABLED.")
         return
     try:
@@ -100,7 +110,10 @@ def _shutdown_handler(signum, frame):
 
 def main() -> NoReturn:
     """Launch background workers, then run the HTTP server in the main thread."""
-    os.environ["SOCIAL_AGENT_EMBEDDED_BOT"] = "1"
+    if _telegram_polling_enabled():
+        os.environ["SOCIAL_AGENT_EMBEDDED_BOT"] = "1"
+    else:
+        os.environ["SOCIAL_AGENT_EMBEDDED_BOT"] = "0"
     os.environ["SOCIAL_AGENT_EMBEDDED_SCHEDULER"] = "1"
     signal.signal(signal.SIGINT, _shutdown_handler)
     signal.signal(signal.SIGTERM, _shutdown_handler)
