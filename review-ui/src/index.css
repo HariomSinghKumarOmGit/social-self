@@ -6,6 +6,7 @@ html,
 body,
 #root {
   height: 100%;
+  overscroll-behavior: none;
 }
 
 body {
@@ -13,6 +14,14 @@ body {
   background: #08090d;
   -webkit-tap-highlight-color: transparent;
   overflow-x: hidden;
+  touch-action: manipulation;
+}
+
+.swipe-deck,
+.swipe-card {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .safe-pb {

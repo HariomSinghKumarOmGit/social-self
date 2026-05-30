@@ -131,7 +131,7 @@ export default function App() {
         <p className="bg-red/10 px-4 py-2 text-center text-sm text-red">{error}</p>
       )}
 
-      <main className="relative flex flex-1 flex-col justify-center overflow-hidden px-1 pb-[5.5rem] sm:px-0 sm:pb-24">
+      <main className="relative flex flex-1 flex-col justify-center overflow-hidden overscroll-none px-1 pb-[5.5rem] sm:px-0 sm:pb-24">
         {loading && (
           <p className="text-center text-gray-500">Loading posts…</p>
         )}

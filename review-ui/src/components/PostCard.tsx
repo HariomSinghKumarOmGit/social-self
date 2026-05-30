@@ -16,9 +16,11 @@ const ACCENT: Record<string, string> = {
 interface Props {
   post: Post;
   overlay?: "approve" | "reject" | null;
+  /** Top swipe card should not scroll — inner scroll steals touch on mobile. */
+  allowScroll?: boolean;
 }
 
-export function PostCard({ post, overlay }: Props) {
+export function PostCard({ post, overlay, allowScroll = true }: Props) {
   const p = (post.platform || "").toLowerCase();
   const icon = PLATFORM_ICON[p] || "📝";
   const gradient = ACCENT[p] || "from-accent/20";
@@ -42,13 +44,26 @@ export function PostCard({ post, overlay }: Props) {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-3">
-        <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-gray-100">{post.content}</p>
+      <div
+        className={`flex-1 px-4 py-3 ${
+          allowScroll ? "overflow-y-auto overscroll-contain" : "overflow-hidden"
+        }`}
+      >
+        <p
+          className={`whitespace-pre-wrap text-[15px] leading-relaxed text-gray-100 ${
+            allowScroll ? "" : "line-clamp-[12] sm:line-clamp-[14]"
+          }`}
+        >
+          {post.content}
+        </p>
         {post.media_url ? (
           <img
             src={post.media_url}
             alt=""
-            className="mt-3 max-h-56 w-full rounded-xl border border-border object-cover"
+            draggable={false}
+            className={`mt-3 w-full rounded-xl border border-border object-cover ${
+              allowScroll ? "max-h-56" : "max-h-40 sm:max-h-48"
+            }`}
             onError={(e) => {
               (e.target as HTMLImageElement).style.display = "none";
             }}
@@ -59,6 +74,7 @@ export function PostCard({ post, overlay }: Props) {
           target="_blank"
           rel="noopener noreferrer"
           className="mt-3 block truncate text-xs text-accent hover:underline"
+          draggable={false}
         >
           Open original post →
         </a>
