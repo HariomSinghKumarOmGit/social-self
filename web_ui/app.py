@@ -61,6 +61,28 @@ _scrape_state: Dict[str, Any] = {
 }
 
 
+def _env_flag(name: str) -> bool | None:
+    """Parse an optional boolean environment flag."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return None
+    return raw.strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _should_start_background_scheduler() -> bool:
+    """Start scheduler automatically only in local long-running web processes."""
+    if os.environ.get("SOCIAL_AGENT_EMBEDDED_SCHEDULER") == "1":
+        return False
+    configured = _env_flag("SOCIAL_AGENT_BACKGROUND_SCHEDULER")
+    if configured is not None:
+        return configured
+    if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+        return False
+    if os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_PUBLIC_DOMAIN"):
+        return False
+    return True
+
+
 def _ensure_background_scheduler() -> None:
     """Start 24h scrape + hourly post scheduler when web UI runs standalone."""
     if getattr(_ensure_background_scheduler, "_started", False):
@@ -99,7 +121,7 @@ def _run_scrape_job() -> None:
 
 # Background scheduler only for local/long-running standalone web processes.
 # main.py owns the scheduler in embedded deployments to avoid duplicate jobs.
-if not os.environ.get("VERCEL") and os.environ.get("SOCIAL_AGENT_EMBEDDED_SCHEDULER") != "1":
+if _should_start_background_scheduler():
     _ensure_background_scheduler()
 
 
@@ -110,6 +132,10 @@ def api_health() -> Any:
         {
             "ok": True,
             "vercel": bool(os.environ.get("VERCEL")),
+            "railway": bool(
+                os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_PUBLIC_DOMAIN")
+            ),
+            "background_scheduler": _should_start_background_scheduler(),
             "db": str(DB_PATH),
         }
     )
