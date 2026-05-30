@@ -6,7 +6,7 @@ nixPkgs = ["python313", "nodejs_20"]
 cmds = [
   "python -m venv /opt/venv",
   ". /opt/venv/bin/activate && pip install -r requirements.txt",
-  "cd review-ui && npm ci",
+  "cd review-ui && npm install --prefer-offline",
 ]
 
 [phases.build]
