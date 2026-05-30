@@ -5,7 +5,7 @@ export PORT="${PORT:-8080}"
 export DATABASE_PATH="${DATABASE_PATH:-/tmp/agent.db}"
 export SOCIAL_AGENT_BACKGROUND_SCHEDULER="${SOCIAL_AGENT_BACKGROUND_SCHEDULER:-false}"
 export TELEGRAM_POLLING_ENABLED="${TELEGRAM_POLLING_ENABLED:-false}"
-export RAILWAY_FALLBACK_PORTS="${RAILWAY_FALLBACK_PORTS:-3000}"
+export RAILWAY_FALLBACK_PORTS="${RAILWAY_FALLBACK_PORTS:-3000 5000 5001}"
 
 echo "Starting Social Agent web on 0.0.0.0:${PORT}"
 echo "Database path: ${DATABASE_PATH}"
@@ -19,23 +19,18 @@ else
   GUNICORN=gunicorn
 fi
 
-for fallback_port in ${RAILWAY_FALLBACK_PORTS}; do
-  if [ "${fallback_port}" != "${PORT}" ]; then
-    echo "Starting fallback web listener on 0.0.0.0:${fallback_port}"
-    "${GUNICORN}" app:app \
-      --bind "0.0.0.0:${fallback_port}" \
-      --workers 1 \
-      --threads 4 \
-      --timeout 120 \
-      --access-logfile - \
-      --error-logfile - &
-  fi
-done
-
-exec "${GUNICORN}" app:app \
-  --bind "0.0.0.0:${PORT}" \
+set -- --bind "0.0.0.0:${PORT}" \
   --workers 1 \
   --threads 8 \
   --timeout 120 \
   --access-logfile - \
   --error-logfile -
+
+for fallback_port in ${RAILWAY_FALLBACK_PORTS}; do
+  if [ "${fallback_port}" != "${PORT}" ]; then
+    echo "Adding fallback web listener on 0.0.0.0:${fallback_port}"
+    set -- "$@" --bind "0.0.0.0:${fallback_port}"
+  fi
+done
+
+exec "${GUNICORN}" "$@" app:app
