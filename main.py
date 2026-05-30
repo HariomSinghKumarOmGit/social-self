@@ -54,7 +54,7 @@ _shutdown_event = threading.Event()
 
 
 def _start_flask() -> None:
-    """Run Flask in a daemon thread (non-debug for threading safety)."""
+    """Run Flask as the foreground HTTP server."""
     from web_ui.app import app
 
     port = int(os.environ.get("PORT", "5001"))
@@ -99,7 +99,7 @@ def _shutdown_handler(signum, frame):
 
 
 def main() -> NoReturn:
-    """Launch all three subsystems and wait for shutdown."""
+    """Launch background workers, then run the HTTP server in the main thread."""
     os.environ["SOCIAL_AGENT_EMBEDDED_BOT"] = "1"
     os.environ["SOCIAL_AGENT_EMBEDDED_SCHEDULER"] = "1"
     signal.signal(signal.SIGINT, _shutdown_handler)
@@ -108,23 +108,21 @@ def main() -> NoReturn:
     ip = _get_local_ip()
     print(BANNER.format(ip=ip, port=os.environ.get("PORT", "5001")))
 
-    threads = [
-        threading.Thread(target=_start_flask, name="flask-ui", daemon=True),
+    background_threads = [
         threading.Thread(target=_start_telegram_bot, name="telegram-bot", daemon=True),
         threading.Thread(target=_start_scheduler, name="scheduler", daemon=True),
     ]
 
-    for t in threads:
+    for t in background_threads:
         t.start()
         logger.info("Thread [%s] started.", t.name)
 
-    # Block main thread until shutdown
     try:
-        _shutdown_event.wait()
+        _start_flask()
     except (KeyboardInterrupt, SystemExit):
         pass
     finally:
-        logger.info("All threads are daemon — exiting now.")
+        logger.info("HTTP server stopped; daemon workers will exit with the process.")
         sys.exit(0)
 
 
