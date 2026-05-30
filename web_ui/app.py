@@ -109,6 +109,12 @@ def api_health() -> Any:
     )
 
 
+@app.get("/favicon.ico")
+def favicon() -> Any:
+    """Avoid noisy browser favicon failures in deployment logs."""
+    return "", 204
+
+
 @app.get("/")
 def index() -> str:
     """Render dashboard UI."""

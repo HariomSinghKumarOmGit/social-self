@@ -28,7 +28,7 @@ BANNER = r"""
 ╠═══════════════════════════════════════════════════════════╣
 ║  Components:                                             ║
 ║    📅  Flask Calendar UI        http://{ip}:{port}      ║
-║    🤖  Telegram Bot             polling mode             ║
+║    🤖  Telegram Bot             {telegram_status}             ║
 ║    ⏱️   Scheduler                scrape every 24h       ║
 ╠═══════════════════════════════════════════════════════════╣
 ║  Press Ctrl+C to shut down gracefully.                   ║
@@ -119,7 +119,14 @@ def main() -> NoReturn:
     signal.signal(signal.SIGTERM, _shutdown_handler)
 
     ip = _get_local_ip()
-    print(BANNER.format(ip=ip, port=os.environ.get("PORT", "5001")))
+    telegram_status = "polling mode" if _telegram_polling_enabled() else "disabled here"
+    print(
+        BANNER.format(
+            ip=ip,
+            port=os.environ.get("PORT", "5001"),
+            telegram_status=telegram_status,
+        )
+    )
 
     background_threads = [
         threading.Thread(target=_start_telegram_bot, name="telegram-bot", daemon=True),
