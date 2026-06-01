@@ -26,11 +26,12 @@ set -- --bind "0.0.0.0:${PORT}" \
   --access-logfile - \
   --error-logfile -
 
-for fallback_port in ${RAILWAY_FALLBACK_PORTS}; do
-  if [ "${fallback_port}" != "${PORT}" ]; then
-    echo "Adding fallback web listener on 0.0.0.0:${fallback_port}"
-    set -- "$@" --bind "0.0.0.0:${fallback_port}"
-  fi
-done
+# Fallback ports disabled to ensure single binding for health checks.
+# for fallback_port in ${RAILWAY_FALLBACK_PORTS}; do
+#   if [ "${fallback_port}" != "${PORT}" ]; then
+#     echo "Adding fallback web listener on 0.0.0.0:${fallback_port}"
+#     set -- "$@" --bind "0.0.0.0:${fallback_port}"
+#   fi
+# done
 
 exec "${GUNICORN}" "$@" app:app
