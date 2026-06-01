@@ -719,4 +719,4 @@ def delete_managed_account(account_id: int) -> bool:
         raise
 
 
-init_db()
+# init_db() has been removed from module level to prevent import-time locking.

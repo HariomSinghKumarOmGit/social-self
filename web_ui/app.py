@@ -64,6 +64,21 @@ def log_request_marker() -> None:
     """Emit an app-level marker so Railway proxy misses are easy to identify."""
     logger.info("HTTP request reached Flask: %s %s host=%s", request.method, request.path, request.host)
 
+@app.before_request
+def _lazy_init() -> None:
+    """Run worker startup tasks safely after Gunicorn forks."""
+    if not getattr(_lazy_init, "_done", False):
+        try:
+            from database import init_db
+            init_db()
+        except Exception as e:
+            logger.warning("Database init during startup failed (likely locked by another worker): %s", e)
+        
+        if _should_start_background_scheduler():
+            _ensure_background_scheduler()
+            
+        _lazy_init._done = True  # type: ignore
+
 _scrape_lock = threading.Lock()
 _scrape_state: Dict[str, Any] = {
     "running": False,
@@ -135,8 +150,7 @@ def _run_scrape_job() -> None:
 
 # Background scheduler only for local/long-running standalone web processes.
 # main.py owns the scheduler in embedded deployments to avoid duplicate jobs.
-if _should_start_background_scheduler():
-    _ensure_background_scheduler()
+# (Scheduler start moved to @app.before_request to avoid Gunicorn worker crashes)
 
 
 @app.get("/api/health")
