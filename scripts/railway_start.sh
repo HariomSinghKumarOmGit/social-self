@@ -35,4 +35,4 @@ set -- --bind "0.0.0.0:${PORT}" \
 #   fi
 # done
 
-exec "${GUNICORN}" "$@" app:app --log-level debug
+exec "${GUNICORN}" "$@" web_ui.app:app --log-level debug
