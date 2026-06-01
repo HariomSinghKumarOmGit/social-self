@@ -13,6 +13,14 @@ from pathlib import Path
 # Ensure the project root is on the Python path so sibling modules are importable.
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+import threading
+
+def thread_excepthook(args):
+    import traceback
+    print(f"THREAD CRASH: {args.exc_type.__name__}: {args.exc_value}", flush=True)
+    traceback.print_tb(args.exc_tb)
+threading.excepthook = thread_excepthook
+
 from typing import Any, Dict
 
 from flask import Flask, jsonify, render_template, request, send_from_directory
@@ -40,9 +48,15 @@ from database import (
 from web_ui.review_logic import filter_and_sort_posts, queue_stats
 from web_ui.system_control import get_system_status, start_beast
 
-app = Flask(__name__)
-CORS(app)
-logger = logging.getLogger(__name__)
+try:
+    app = Flask(__name__)
+    CORS(app)
+    logger = logging.getLogger(__name__)
+except Exception as e:
+    import traceback
+    print(f"STARTUP CRASH: {e}", flush=True)
+    traceback.print_exc()
+    raise
 
 
 @app.before_request
