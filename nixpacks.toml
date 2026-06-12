@@ -1,16 +1,17 @@
-# Railway / Nixpacks: Python app + Vite review UI build
+# Railway / Nixpacks — Python venv + Node review-ui build
 [phases.setup]
 nixPkgs = ["python313", "nodejs_20"]
 
 [phases.install]
 cmds = [
-  "python -m venv /opt/venv",
-  ". /opt/venv/bin/activate && pip install -r requirements.txt",
-  "cd review-ui && npm install --prefer-offline",
+  "python3 -m venv /opt/venv",
+  "/opt/venv/bin/python -m pip install --upgrade pip",
+  "/opt/venv/bin/pip install -r requirements.txt",
+  "cd review-ui && npm ci",
 ]
 
 [phases.build]
-cmds = [". /opt/venv/bin/activate && python scripts/vercel_build.py"]
+cmds = ["/opt/venv/bin/python scripts/vercel_build.py"]
 
 [start]
 cmd = "sh scripts/railway_start.sh"

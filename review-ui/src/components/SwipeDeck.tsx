@@ -1,7 +1,8 @@
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { animate, motion, useMotionValue, useTransform } from "framer-motion";
 import type { Post } from "../types";
 import { PostCard } from "./PostCard";
+import { SwipeActions } from "./SwipeActions";
 
 const SWIPE_THRESHOLD = 72;
 
@@ -14,37 +15,55 @@ interface Props {
 
 export function SwipeDeck({ posts, onSwipe, reviewedCount, totalInSession }: Props) {
   const [exitDir, setExitDir] = useState<"left" | "right" | null>(null);
+  const busy = useRef(false);
   const stack = posts.slice(0, 3);
+  const topPost = stack[0];
+
+  const triggerSwipe = useCallback(
+    (dir: "left" | "right") => {
+      if (!topPost || exitDir || busy.current) return;
+      busy.current = true;
+      setExitDir(dir);
+      setTimeout(() => {
+        onSwipe(dir, topPost);
+        setExitDir(null);
+        busy.current = false;
+      }, 280);
+    },
+    [topPost, exitDir, onSwipe],
+  );
 
   if (!stack.length) return null;
 
   return (
-    <div className="swipe-deck relative mx-auto w-full max-w-md px-2 sm:px-4">
-      <p className="mb-2 text-center text-sm text-gray-400 sm:mb-3">
-        {reviewedCount} / {totalInSession} reviewed · swipe or tap ✓ ✗
-      </p>
-      <div className="relative h-[min(calc(100dvh-13rem),560px)] w-full">
-        {stack.map((post, index) => {
-          const isTop = index === 0;
-          return (
-            <SwipeCard
-              key={post.id}
-              post={post}
-              index={index}
-              isTop={isTop}
-              exitDir={isTop ? exitDir : null}
-              onSwipe={(dir) => {
-                setExitDir(dir);
-                setTimeout(() => {
-                  onSwipe(dir, post);
-                  setExitDir(null);
-                }, 280);
-              }}
-            />
-          );
-        })}
+    <>
+      <div className="swipe-deck relative mx-auto w-full max-w-md px-2 pb-28 sm:px-4 sm:pb-32">
+        <p className="mb-2 text-center text-sm text-gray-400 sm:mb-3">
+          {reviewedCount} / {totalInSession} reviewed · swipe or tap ✕ / ✓
+        </p>
+        <div className="relative h-[min(calc(100dvh-15rem),520px)] w-full sm:h-[min(calc(100dvh-13rem),560px)]">
+          {stack.map((post, index) => {
+            const isTop = index === 0;
+            return (
+              <SwipeCard
+                key={post.id}
+                post={post}
+                index={index}
+                isTop={isTop}
+                exitDir={isTop ? exitDir : null}
+                onSwipe={triggerSwipe}
+              />
+            );
+          })}
+        </div>
       </div>
-    </div>
+
+      <SwipeActions
+        onReject={() => triggerSwipe("left")}
+        onApprove={() => triggerSwipe("right")}
+        disabled={!topPost || !!exitDir}
+      />
+    </>
   );
 }
 
@@ -168,16 +187,16 @@ function SwipeCard({
         {isTop && (
           <>
             <motion.div
-              className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-2xl bg-green/30 text-5xl sm:text-6xl"
+              className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-2xl border-4 border-green/60 bg-green/20 text-6xl font-bold text-green sm:text-7xl"
               style={{ opacity: approveOpacity }}
             >
               ✓
             </motion.div>
             <motion.div
-              className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-2xl bg-red/30 text-5xl sm:text-6xl"
+              className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-2xl border-4 border-red/60 bg-red/20 text-6xl font-bold text-red sm:text-7xl"
               style={{ opacity: rejectOpacity }}
             >
-              ✗
+              ✕
             </motion.div>
           </>
         )}

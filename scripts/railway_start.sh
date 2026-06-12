@@ -1,6 +1,10 @@
 #!/usr/bin/env sh
 set -eu
 
+if [ -x /opt/venv/bin/python ]; then
+  export PATH="/opt/venv/bin:${PATH}"
+fi
+
 export PORT="${PORT:-8080}"
 export DATABASE_PATH="${DATABASE_PATH:-/tmp/agent.db}"
 export SOCIAL_AGENT_BACKGROUND_SCHEDULER="${SOCIAL_AGENT_BACKGROUND_SCHEDULER:-false}"
