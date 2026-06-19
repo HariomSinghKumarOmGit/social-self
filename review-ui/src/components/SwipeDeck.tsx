@@ -37,11 +37,11 @@ export function SwipeDeck({ posts, onSwipe, reviewedCount, totalInSession }: Pro
 
   return (
     <>
-      <div className="swipe-deck relative mx-auto w-full max-w-md px-2 pb-28 sm:px-4 sm:pb-32">
-        <p className="mb-2 text-center text-sm text-gray-400 sm:mb-3">
-          {reviewedCount} / {totalInSession} reviewed · swipe or tap ✕ / ✓
+      <div className="swipe-deck relative mx-auto w-full max-w-md px-3 pb-24 sm:px-4 sm:pb-28">
+        <p className="mb-2 text-center text-xs text-gray-500">
+          {reviewedCount} / {totalInSession} reviewed
         </p>
-        <div className="relative h-[min(calc(100dvh-15rem),520px)] w-full sm:h-[min(calc(100dvh-13rem),560px)]">
+        <div className="relative h-[min(calc(100dvh-12rem),520px)] w-full sm:h-[min(calc(100dvh-10rem),560px)]">
           {stack.map((post, index) => {
             const isTop = index === 0;
             return (
@@ -85,9 +85,9 @@ function SwipeCard({
   const approveOpacity = useTransform(x, [0, 60, 120], [0, 0.55, 1]);
   const rejectOpacity = useTransform(x, [-120, -60, 0], [1, 0.55, 0]);
 
-  const scale = 1 - index * 0.05;
-  const y = index * 8;
-  const opacity = 1 - index * 0.12;
+  const scale = 1 - index * 0.04;
+  const y = index * 6;
+  const opacity = 1 - index * 0.1;
 
   const origin = useRef<{ x: number; y: number } | null>(null);
   const dragging = useRef(false);
@@ -187,13 +187,13 @@ function SwipeCard({
         {isTop && (
           <>
             <motion.div
-              className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-2xl border-4 border-green/60 bg-green/20 text-6xl font-bold text-green sm:text-7xl"
+              className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-2xl border-2 border-green/40 bg-green/15 text-5xl font-bold text-green"
               style={{ opacity: approveOpacity }}
             >
               ✓
             </motion.div>
             <motion.div
-              className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-2xl border-4 border-red/60 bg-red/20 text-6xl font-bold text-red sm:text-7xl"
+              className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-2xl border-2 border-red/40 bg-red/15 text-5xl font-bold text-red"
               style={{ opacity: rejectOpacity }}
             >
               ✕

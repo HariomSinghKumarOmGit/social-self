@@ -7,51 +7,44 @@ const PLATFORM_ICON: Record<string, string> = {
   youtube: "▶",
 };
 
-const ACCENT: Record<string, string> = {
-  instagram: "from-pink-600/30",
-  twitter: "from-sky-600/30",
-  youtube: "from-red-600/30",
-};
-
 interface Props {
   post: Post;
   overlay?: "approve" | "reject" | null;
-  /** Top swipe card should not scroll — inner scroll steals touch on mobile. */
   allowScroll?: boolean;
+  showSchedule?: boolean;
 }
 
-export function PostCard({ post, overlay, allowScroll = true }: Props) {
+export function PostCard({ post, overlay, allowScroll = true, showSchedule }: Props) {
   const p = (post.platform || "").toLowerCase();
   const icon = PLATFORM_ICON[p] || "📝";
-  const gradient = ACCENT[p] || "from-accent/20";
+  const link = postLink(post);
+  const score = (post.interaction_score ?? 0).toFixed(0);
 
   return (
-    <div className="relative flex h-full w-full flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl sm:max-w-md">
-      <div className={`bg-gradient-to-b ${gradient} to-transparent px-4 pb-2 pt-4`}>
-        <div className="flex items-start gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-black/30 text-xl">
-            {icon}
+    <div className="relative flex h-full w-full flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-xl">
+      {/* Header */}
+      <div className="flex items-center gap-2.5 px-3 py-2.5 sm:px-4 sm:py-3">
+        <span className="text-lg">{icon}</span>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-semibold">@{post.author}</div>
+          <div className="text-[11px] text-gray-500">
+            {platformLabel(p)} · {fmtDate(post.created_at)}
           </div>
-          <div className="min-w-0 flex-1">
-            <div className="truncate font-semibold">@{post.author}</div>
-            <div className="text-xs text-gray-400">
-              {platformLabel(p)} · {fmtDate(post.created_at)}
-            </div>
-          </div>
-          <div className="rounded-lg bg-black/40 px-2 py-1 text-xs font-bold text-green">
-            {post.interaction_score.toFixed(1)}
-          </div>
+        </div>
+        <div className="shrink-0 rounded-md bg-green/10 px-1.5 py-0.5 text-[11px] font-bold text-green">
+          {score}
         </div>
       </div>
 
+      {/* Content */}
       <div
-        className={`flex-1 px-4 py-3 ${
+        className={`flex-1 px-3 py-2 sm:px-4 ${
           allowScroll ? "overflow-y-auto overscroll-contain" : "overflow-hidden"
         }`}
       >
         <p
-          className={`whitespace-pre-wrap text-[15px] leading-relaxed text-gray-100 ${
-            allowScroll ? "" : "line-clamp-[12] sm:line-clamp-[14]"
+          className={`whitespace-pre-wrap text-[13px] leading-relaxed text-gray-200 sm:text-sm ${
+            allowScroll ? "" : "line-clamp-[10] sm:line-clamp-[12]"
           }`}
         >
           {post.content}
@@ -61,57 +54,71 @@ export function PostCard({ post, overlay, allowScroll = true }: Props) {
             src={post.media_url}
             alt=""
             draggable={false}
-            className={`mt-3 w-full rounded-xl border border-border object-cover ${
-              allowScroll ? "max-h-56" : "max-h-40 sm:max-h-48"
+            className={`mt-2 w-full rounded-lg border border-border object-cover ${
+              allowScroll ? "max-h-48" : "max-h-32 sm:max-h-40"
             }`}
             onError={(e) => {
               (e.target as HTMLImageElement).style.display = "none";
             }}
           />
         ) : null}
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-5 gap-1 border-t border-border px-2 py-1.5 text-center text-[9px] text-gray-500">
+        <Stat value={fmtNum(post.likes)} icon="❤️" />
+        <Stat value={fmtNum(post.comments)} icon="💬" />
+        <Stat value={fmtNum(post.shares)} icon="🔁" />
+        <Stat value={fmtNum(post.saves)} icon="🔖" />
+        <Stat value={fmtNum(post.views)} icon="👁" />
+      </div>
+
+      {/* Link bar */}
+      {link && link !== "#" && (
         <a
-          href={postLink(post)}
+          href={link}
           target="_blank"
           rel="noopener noreferrer"
-          className="mt-3 block truncate text-xs text-accent hover:underline"
+          className="flex items-center gap-2 border-t border-border px-3 py-2 text-[11px] text-accent hover:bg-accent/5 transition-colors sm:px-4"
           draggable={false}
         >
-          Open original post →
+          <span>🔗</span>
+          <span className="truncate flex-1">{link}</span>
+          <span className="shrink-0">→</span>
         </a>
-      </div>
+      )}
 
-      <div className="grid grid-cols-3 gap-1 border-t border-border bg-black/20 px-2 py-2 text-center text-[9px] uppercase tracking-wide text-gray-500 sm:grid-cols-5 sm:py-3 sm:text-[10px]">
-        <Stat label="Likes" value={fmtNum(post.likes)} icon="❤️" />
-        <Stat label="Comments" value={fmtNum(post.comments)} icon="💬" />
-        <Stat label="Shares" value={fmtNum(post.shares)} icon="🔁" />
-        <Stat label="Saves" value={fmtNum(post.saves)} icon="🔖" />
-        <Stat label="Views" value={fmtNum(post.views)} icon="👁" />
-      </div>
+      {/* Schedule info */}
+      {showSchedule && post.scheduled_date && (
+        <div className="border-t border-border px-3 py-1.5 text-[11px] text-gray-500 sm:px-4">
+          📅 {post.scheduled_date}
+          {post.scheduled_time && <span className="ml-1">at {post.scheduled_time}</span>}
+          {post.target_account && (
+            <span className="ml-2 text-accent">→ @{post.target_account}</span>
+          )}
+        </div>
+      )}
 
-      <div className="absolute right-3 top-3 rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-300">
-        {post.status}
-      </div>
-
+      {/* Overlays */}
       {overlay === "approve" && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-2xl bg-green/25">
-          <span className="text-6xl">✓</span>
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-2xl bg-green/20">
+          <span className="text-5xl">✓</span>
         </div>
       )}
       {overlay === "reject" && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-2xl bg-red/25">
-          <span className="text-6xl">✗</span>
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-2xl bg-red/20">
+          <span className="text-5xl">✗</span>
         </div>
       )}
     </div>
   );
 }
 
-function Stat({ label, value, icon }: { label: string; value: string; icon: string }) {
+function Stat({ value, icon }: { value: string; icon: string }) {
   return (
     <div>
-      <div className="text-sm font-bold text-white">{value}</div>
+      <div className="text-xs font-semibold text-gray-300">{value}</div>
       <div className="mt-0.5">{icon}</div>
-      <div>{label}</div>
     </div>
   );
 }

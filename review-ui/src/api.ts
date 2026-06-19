@@ -1,4 +1,4 @@
-import type { Post, SourceAccounts, ReviewStats } from "./types";
+import type { Post, ReviewStats } from "./types";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 
@@ -29,7 +29,7 @@ export async function fetchQueue(params: {
   return request(`/api/review/queue?${q.toString()}`);
 }
 
-export async function fetchSourceAccounts(): Promise<SourceAccounts> {
+export async function fetchSourceAccounts(): Promise<Record<string, string[]>> {
   return request("/api/source-accounts");
 }
 
@@ -53,14 +53,4 @@ export async function rejectPost(postId: number): Promise<void> {
 
 export async function triggerScrape(): Promise<void> {
   await request("/api/scrape", { method: "POST" });
-}
-
-export async function startBeast(): Promise<{
-  ok: boolean;
-  message?: string;
-  warning?: string;
-  links?: { home: string; feed: string; review: string };
-  error?: string;
-}> {
-  return request("/api/system/start-beast", { method: "POST" });
 }

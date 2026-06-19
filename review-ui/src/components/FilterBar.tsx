@@ -2,160 +2,122 @@ import type { SourceAccounts } from "../types";
 
 interface Props {
   platform: string;
-  author: string;
   sort: string;
-  accounts: SourceAccounts;
   stats: { total: number; total_likes: number };
   onPlatform: (p: string) => void;
-  onAuthor: (a: string) => void;
   onSort: (s: string) => void;
   onScrape: () => void;
   scraping: boolean;
-  onStartBeast: () => void;
-  beastLoading: boolean;
   tab: "pending" | "approved";
   onTab: (tab: "pending" | "approved") => void;
+  approvedCount: number;
 }
 
 export function FilterBar({
   platform,
-  author,
   sort,
-  accounts,
   stats,
   onPlatform,
-  onAuthor,
   onSort,
   onScrape,
   scraping,
-  onStartBeast,
-  beastLoading,
   tab,
   onTab,
+  approvedCount,
 }: Props) {
-  const authors = platform ? accounts[platform as keyof SourceAccounts] || [] : [];
-
   const platforms = [
     { id: "", label: "All" },
-    { id: "instagram", label: "📸 Insta" },
-    { id: "twitter", label: "𝕏 Twitter" },
-    { id: "youtube", label: "▶ YouTube" },
+    { id: "instagram", label: "📸" },
+    { id: "twitter", label: "𝕏" },
+    { id: "youtube", label: "▶" },
   ];
 
   return (
-    <header className="sticky top-0 z-40 shrink-0 border-b border-border bg-surface/95 px-2 py-2 backdrop-blur sm:px-3 sm:py-3 md:px-6">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <a href="/" className="shrink-0 text-xs text-gray-400 hover:text-white sm:text-sm">
-            ← Calendar
-          </a>
-          <span className="text-gray-600">|</span>
-          <a href="/feed" className="shrink-0 text-xs text-gray-400 hover:text-white sm:text-sm">
-            Feed →
-          </a>
-          <h1 className="truncate text-base font-bold sm:text-lg ml-2">
-            Review <span className="text-accent">Stack</span>
+    <header className="sticky top-0 z-40 shrink-0 border-b border-border bg-surface/95 backdrop-blur">
+      {/* Top row: title + scrape */}
+      <div className="flex items-center justify-between px-3 py-2 sm:px-4">
+        <div className="flex items-center gap-2 min-w-0">
+          <a href="/" className="text-gray-500 hover:text-white text-xs">←</a>
+          <h1 className="text-sm font-bold sm:text-base truncate">
+            Review
           </h1>
         </div>
-        <div className="flex shrink-0 flex-wrap gap-1.5 sm:gap-2">
-          <button
-            type="button"
-            onClick={onStartBeast}
-            disabled={beastLoading}
-            className="rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide text-white disabled:opacity-60 sm:px-3 sm:py-1.5 sm:text-xs"
-            style={{
-              background: "linear-gradient(135deg, #ff6b35, #f72585 55%, #7209b7)",
-            }}
-          >
-            {beastLoading ? "Starting…" : "Start Beast"}
-          </button>
-          <button
-            type="button"
-            onClick={onScrape}
-            disabled={scraping}
-            className="rounded-full border border-green/40 bg-green/10 px-3 py-1.5 text-xs font-semibold text-green disabled:opacity-50"
-          >
-            {scraping ? "Scraping…" : "🔄 Scrape"}
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={onScrape}
+          disabled={scraping}
+          className="shrink-0 rounded-full border border-accent/30 bg-accent/10 px-3 py-1 text-[11px] font-medium text-accent disabled:opacity-50"
+        >
+          {scraping ? "Scraping…" : "↻ Scrape"}
+        </button>
       </div>
 
-      <div className="mb-2 flex flex-wrap gap-1.5 items-center">
-        <div className="flex gap-1.5 mr-4 bg-black/20 p-1 rounded-full border border-border">
+      {/* Tabs + filters row */}
+      <div className="flex items-center gap-2 px-3 pb-2 sm:px-4 overflow-x-auto scrollbar-hide">
+        {/* Tabs */}
+        <div className="flex shrink-0 rounded-lg bg-black/30 p-0.5">
           <button
             type="button"
             onClick={() => onTab("pending")}
-            className={`rounded-full px-3 py-1 text-xs font-semibold ${
-              tab === "pending" ? "bg-accent text-white" : "text-gray-400 hover:text-white"
+            className={`rounded-md px-3 py-1 text-xs font-medium transition-all ${
+              tab === "pending"
+                ? "bg-card text-white shadow-sm"
+                : "text-gray-500 hover:text-gray-300"
             }`}
           >
             Pending
+            {tab === "pending" && stats.total > 0 && (
+              <span className="ml-1 text-accent">{stats.total}</span>
+            )}
           </button>
           <button
             type="button"
             onClick={() => onTab("approved")}
-            className={`rounded-full px-3 py-1 text-xs font-semibold ${
-              tab === "approved" ? "bg-accent text-white" : "text-gray-400 hover:text-white"
+            className={`rounded-md px-3 py-1 text-xs font-medium transition-all ${
+              tab === "approved"
+                ? "bg-card text-white shadow-sm"
+                : "text-gray-500 hover:text-gray-300"
             }`}
           >
             Approved
+            {approvedCount > 0 && (
+              <span className={`ml-1 ${tab === "approved" ? "text-green" : "text-gray-600"}`}>
+                {approvedCount}
+              </span>
+            )}
           </button>
         </div>
+
+        {/* Divider */}
+        <div className="h-4 w-px bg-border shrink-0" />
+
+        {/* Platform filters */}
         {platforms.map((p) => (
           <button
             key={p.id || "all"}
             type="button"
             onClick={() => onPlatform(p.id)}
-            className={`rounded-full px-3 py-1.5 text-xs font-medium ${
+            className={`shrink-0 rounded-md px-2 py-1 text-xs transition-all ${
               platform === p.id
-                ? "bg-accent/20 text-accent ring-1 ring-accent"
-                : "bg-card text-gray-400 ring-1 ring-border"
+                ? "bg-accent/15 text-accent"
+                : "text-gray-500 hover:text-gray-300"
             }`}
           >
             {p.label}
           </button>
         ))}
+
+        {/* Sort */}
         <select
           value={sort}
           onChange={(e) => onSort(e.target.value)}
-          className="ml-auto rounded-full border border-border bg-card px-3 py-1.5 text-xs text-gray-300"
+          className="ml-auto shrink-0 rounded-md border-0 bg-transparent px-1 py-1 text-[11px] text-gray-500 outline-none"
         >
-          <option value="interaction">Most interactions</option>
-          <option value="likes">Most likes</option>
-          <option value="newest">Most recent</option>
+          <option value="interaction">Top</option>
+          <option value="likes">Likes</option>
+          <option value="newest">New</option>
         </select>
       </div>
-
-      {authors.length > 0 && (
-        <div className="mb-2 flex gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
-          <button
-            type="button"
-            onClick={() => onAuthor("")}
-            className={`shrink-0 rounded-full px-3 py-1 text-xs ${
-              !author ? "bg-white/10 text-white" : "bg-card text-gray-500"
-            }`}
-          >
-            All accounts
-          </button>
-          {authors.map((a) => (
-            <button
-              key={a}
-              type="button"
-              onClick={() => onAuthor(a)}
-              className={`shrink-0 rounded-full px-3 py-1 text-xs ${
-                author === a ? "bg-sky-500/20 text-sky-300" : "bg-card text-gray-500"
-              }`}
-            >
-              @{a}
-            </button>
-          ))}
-        </div>
-      )}
-
-      <p className="text-xs text-gray-500">
-        <strong className="text-gray-300">{stats.total}</strong> posts ·{" "}
-        <strong className="text-gray-300">{stats.total_likes.toLocaleString()}</strong> total likes
-      </p>
     </header>
   );
 }

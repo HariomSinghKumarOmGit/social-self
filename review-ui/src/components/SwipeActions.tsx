@@ -6,32 +6,26 @@ interface Props {
 
 export function SwipeActions({ onReject, onApprove, disabled }: Props) {
   return (
-    <div className="swipe-actions fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-[#0f1118]/95 px-4 py-3 backdrop-blur safe-pb sm:py-4">
-      <div className="mx-auto flex max-w-md items-center justify-center gap-10 sm:gap-14">
+    <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-surface/95 backdrop-blur safe-pb">
+      <div className="mx-auto flex max-w-md items-center justify-center gap-8 px-4 py-3">
         <button
           type="button"
-          aria-label="Reject post"
+          aria-label="Reject"
           disabled={disabled}
           onClick={onReject}
-          className="group flex flex-col items-center gap-1 disabled:opacity-40"
+          className="flex h-12 w-12 items-center justify-center rounded-full border border-red/40 bg-red/10 text-2xl text-red shadow-lg shadow-red/10 transition active:scale-90 disabled:opacity-30 sm:h-14 sm:w-14"
         >
-          <span className="flex h-14 w-14 items-center justify-center rounded-full border-2 border-red/50 bg-red/20 text-3xl font-bold text-red shadow-lg shadow-red/25 transition active:scale-95 sm:h-16 sm:w-16">
-            ✕
-          </span>
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-red">Reject</span>
+          ✕
         </button>
 
         <button
           type="button"
-          aria-label="Approve post"
+          aria-label="Approve"
           disabled={disabled}
           onClick={onApprove}
-          className="group flex flex-col items-center gap-1 disabled:opacity-40"
+          className="flex h-14 w-14 items-center justify-center rounded-full border border-green/40 bg-green/10 text-3xl text-green shadow-lg shadow-green/10 transition active:scale-90 disabled:opacity-30 sm:h-16 sm:w-16"
         >
-          <span className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-green/50 bg-green/20 text-4xl font-bold text-green shadow-lg shadow-green/25 transition active:scale-95 sm:h-[4.5rem] sm:w-[4.5rem]">
-            ✓
-          </span>
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-green">Approve</span>
+          ✓
         </button>
       </div>
     </div>

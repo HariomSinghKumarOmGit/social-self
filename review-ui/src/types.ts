@@ -18,6 +18,9 @@ export interface Post {
   interaction_score: number;
   created_at: string;
   status: PostStatus;
+  scheduled_date?: string | null;
+  scheduled_time?: string | null;
+  target_account?: string | null;
 }
 
 export interface SourceAccounts {

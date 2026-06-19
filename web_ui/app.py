@@ -230,8 +230,11 @@ def review_vite_assets(filename: str) -> Any:
 
 @app.get("/api/scheduled")
 def api_scheduled() -> Any:
-    """Return all approved scheduled posts."""
-    return jsonify(get_scheduled())
+    """Return all approved scheduled posts (enriched with interaction scores)."""
+    from web_ui.review_logic import filter_and_sort_posts
+    raw = get_scheduled()
+    enriched = filter_and_sort_posts(raw, sort_key="newest")
+    return jsonify(enriched)
 
 
 @app.get("/api/posts/feed")
