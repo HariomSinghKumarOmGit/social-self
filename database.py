@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from config import ACCOUNTS
+from config import ACCOUNTS, POST_TIMES
 
 # Always resolve DB relative to repo root (not process cwd — bot may start from telegram_bot/).
 _PROJECT_ROOT = Path(__file__).resolve().parent

@@ -45,7 +45,11 @@ export function FilterBar({
           <a href="/" className="shrink-0 text-xs text-gray-400 hover:text-white sm:text-sm">
             ← Calendar
           </a>
-          <h1 className="truncate text-base font-bold sm:text-lg">
+          <span className="text-gray-600">|</span>
+          <a href="/feed" className="shrink-0 text-xs text-gray-400 hover:text-white sm:text-sm">
+            Feed →
+          </a>
+          <h1 className="truncate text-base font-bold sm:text-lg ml-2">
             Review <span className="text-accent">Stack</span>
           </h1>
         </div>
