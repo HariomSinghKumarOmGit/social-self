@@ -130,10 +130,10 @@ class BrowserBridge:
             await self._playwright.stop()
             self._playwright = None
             raise ConnectionError(
-                f"Could not connect to Chrome at {self.cdp_url}.\n"
-                f"Make sure Chrome is running with: --remote-debugging-port=9222\n"
-                f"Error: {exc}"
-            ) from exc
+                f"Could not connect to Chrome at {self.cdp_url}. "
+                f"Make sure Chrome is running with: --remote-debugging-port=9222. "
+                f"Underlying error: {type(exc).__name__}"
+            ) from None
 
     async def disconnect(self) -> None:
         """Disconnect from Chrome (does NOT close the user's browser)."""

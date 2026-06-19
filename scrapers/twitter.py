@@ -21,12 +21,15 @@ from database import save_post
 logger = logging.getLogger(__name__)
 
 NITTER_HOSTS = (
-    "https://nitter.net",
+    "https://nitter.lucabased.xyz",
+    "https://nitter.catsarch.com",
+    "https://nitter.ktachibana.party",
+    "https://nitter.rawbit.ninja",
+    "https://nitter.esmailelbob.xyz",
+    "https://nitter.projectsegfau.lt",
+    "https://nitter.fedica.com",
     "https://nitter.privacydev.net",
-    "https://nitter.poast.org",
-    "https://nitter.woodland.cafe",
     "https://nitter.1d4.us",
-    "https://nitter.kavin.rocks",
 )
 
 
@@ -79,8 +82,8 @@ def _fetch_feed(url: str, retries: int = 3) -> Optional[feedparser.FeedParserDic
             if response.status_code == 200:
                 return feedparser.parse(response.text)
             logger.warning("Nitter status %s for %s", response.status_code, url)
-        except requests.RequestException:
-            logger.exception("Nitter fetch failed attempt %s for %s", attempt, url)
+        except requests.RequestException as e:
+            logger.warning("Nitter fetch failed attempt %s for %s: %s", attempt, url, e)
         if attempt < retries:
             backoff = 2 ** (attempt - 1)
             time.sleep(backoff + random.uniform(0.2, 1.0))
@@ -98,8 +101,98 @@ def _entry_is_recent(entry: feedparser.FeedParserDict, cutoff: datetime) -> bool
         return False
 
 
+def _safe_int(value: object) -> int:
+    try:
+        return int(value) if value is not None else 0
+    except (TypeError, ValueError):
+        return 0
+
+
+def _scrape_twitter_apify(username: str, cutoff: datetime) -> List[Dict[str, object]]:
+    from apify_client import ApifyClient
+    from config import APIFY_API_TOKEN
+
+    if not APIFY_API_TOKEN:
+        logger.error("No APIFY_API_TOKEN for fallback Twitter scrape.")
+        return []
+
+    client = ApifyClient(APIFY_API_TOKEN)
+    logger.info("Using Apify fallback for %s", username)
+    try:
+        run = client.actor("apidojo/tweet-scraper").call(run_input={
+            "twitterUrls": [f"https://twitter.com/{username}"],
+            "maxItems": 15,
+        })
+        items = list(client.dataset(run["defaultDatasetId"]).iterate_items())
+    except Exception:
+        logger.exception("Apify fallback failed for %s", username)
+        return []
+
+    saved_items = []
+    for item in items:
+        try:
+            pub_str = item.get("createdAt") or item.get("created_at") or ""
+            try:
+                published = parsedate_to_datetime(pub_str)
+            except (TypeError, ValueError):
+                try:
+                    published = datetime.fromisoformat(pub_str.replace("Z", "+00:00"))
+                except ValueError:
+                    published = datetime.now(timezone.utc)
+            
+            if published.tzinfo is None:
+                published = published.replace(tzinfo=timezone.utc)
+            
+            if published < cutoff:
+                continue
+
+            content = item.get("text", item.get("full_text", ""))
+            post_url = item.get("url", "")
+            media_url = ""
+            media = item.get("extendedEntities", {}).get("media", [])
+            if media and len(media) > 0:
+                media_url = media[0].get("media_url_https", media[0].get("url", ""))
+
+            likes = _safe_int(item.get("favoriteCount", item.get("favorite_count", item.get("likes", 0))))
+            comments = _safe_int(item.get("replyCount", item.get("reply_count", item.get("replies", 0))))
+            shares = _safe_int(item.get("retweetCount", item.get("retweet_count", item.get("retweets", 0))))
+            views = _safe_int(item.get("viewCount", item.get("views", 0)))
+            saves = _safe_int(item.get("bookmarkCount", item.get("bookmarks", 0)))
+
+            engagement = likes + comments * 3 + shares * 2 + views * 0.01
+
+            post_id = save_post(
+                platform="twitter",
+                author=username,
+                content=content or post_url,
+                post_url=post_url or None,
+                media_url=media_url or None,
+                likes=likes,
+                comments=comments,
+                shares=shares,
+                saves=saves,
+                views=views,
+                engagement_score=float(engagement),
+            )
+            saved_items.append({
+                "id": post_id,
+                "platform": "twitter",
+                "author": username,
+                "content": content,
+                "post_url": post_url,
+                "media_url": media_url,
+                "likes": likes,
+                "comments": comments,
+                "retweets": shares,
+                "saves": saves,
+            })
+        except Exception:
+            logger.exception("Failed processing Apify Twitter item for %s", username)
+    return saved_items
+
+
 def scrape_twitter() -> List[Dict[str, object]]:
-    """Scrape recent tweets from Nitter RSS and persist them."""
+    """Scrape recent tweets from Nitter RSS and persist them. Fallback to Apify."""
     cutoff = datetime.now(timezone.utc) - timedelta(days=LOOKBACK_DAYS)
     saved_items: List[Dict[str, object]] = []
 
@@ -111,7 +204,8 @@ def scrape_twitter() -> List[Dict[str, object]]:
                 break
 
         if not feed:
-            logger.error("All Nitter hosts failed for %s", username)
+            logger.warning("All Nitter hosts failed for %s. Using Apify fallback.", username)
+            saved_items.extend(_scrape_twitter_apify(username, cutoff))
             continue
 
         for entry in feed.entries:
