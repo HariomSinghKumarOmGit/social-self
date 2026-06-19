@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { approvePost, fetchQueue, fetchSourceAccounts, rejectPost, startBeast, triggerScrape } from "./api";
+import { approvePost, fetchApproved, fetchQueue, fetchSourceAccounts, rejectPost, startBeast, triggerScrape } from "./api";
 import { FilterBar } from "./components/FilterBar";
 import { SummaryScreen } from "./components/SummaryScreen";
 import { SwipeDeck } from "./components/SwipeDeck";
+import { ApprovedView } from "./components/ApprovedView";
 import type { Post, SourceAccounts } from "./types";
 
 export default function App() {
@@ -21,6 +22,10 @@ export default function App() {
   const [approved, setApproved] = useState(0);
   const [rejected, setRejected] = useState(0);
   const [byPlatform, setByPlatform] = useState<Record<string, number>>({});
+  
+  const [tab, setTab] = useState<"pending" | "approved">("pending");
+  const [approvedQueue, setApprovedQueue] = useState<Post[]>([]);
+  const [approvedLoading, setApprovedLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -46,8 +51,39 @@ export default function App() {
   }, [platform, author, sort]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    if (tab === "pending") {
+      load();
+    } else {
+      loadApproved();
+    }
+  }, [tab, load]);
+
+  const loadApproved = async () => {
+    setApprovedLoading(true);
+    setError("");
+    try {
+      const posts = await fetchApproved();
+      // Apply same filters (platform, author, sort) if desired, or just show all
+      let filtered = posts;
+      if (platform) filtered = filtered.filter(p => p.platform === platform);
+      if (author) filtered = filtered.filter(p => p.author === author);
+      if (sort === "interaction") filtered.sort((a, b) => b.interaction_score - a.interaction_score);
+      else if (sort === "likes") filtered.sort((a, b) => b.likes - a.likes);
+      else if (sort === "newest") filtered.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      
+      setApprovedQueue(filtered);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load approved posts");
+    } finally {
+      setApprovedLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (tab === "approved") {
+      loadApproved();
+    }
+  }, [platform, author, sort]);
 
   const handleSwipe = async (direction: "left" | "right", post: Post) => {
     setQueue((prev) => prev.filter((p) => p.id !== post.id));
@@ -123,6 +159,8 @@ export default function App() {
         scraping={scraping}
         onStartBeast={handleStartBeast}
         beastLoading={beastLoading}
+        tab={tab}
+        onTab={setTab}
       />
 
       {error && (
@@ -130,30 +168,36 @@ export default function App() {
       )}
 
       <main className="relative flex flex-1 flex-col justify-center overflow-hidden overscroll-none px-1 sm:px-0">
-        {loading && (
-          <p className="text-center text-gray-500">Loading posts…</p>
-        )}
-        {!loading && queue.length === 0 && sessionTotal === 0 && (
-          <div className="px-6 text-center text-gray-500">
-            <p className="text-4xl mb-2">📭</p>
-            <p>No pending posts. Run the scraper to fetch content.</p>
-          </div>
-        )}
-        {done && (
-          <SummaryScreen
-            approved={approved}
-            rejected={rejected}
-            byPlatform={byPlatform}
-            onReload={load}
-          />
-        )}
-        {!loading && queue.length > 0 && (
-          <SwipeDeck
-            posts={queue}
-            onSwipe={handleSwipe}
-            reviewedCount={reviewed}
-            totalInSession={sessionTotal}
-          />
+        {tab === "pending" ? (
+          <>
+            {loading && (
+              <p className="text-center text-gray-500">Loading posts…</p>
+            )}
+            {!loading && queue.length === 0 && sessionTotal === 0 && (
+              <div className="px-6 text-center text-gray-500">
+                <p className="text-4xl mb-2">📭</p>
+                <p>No pending posts. Run the scraper to fetch content.</p>
+              </div>
+            )}
+            {done && (
+              <SummaryScreen
+                approved={approved}
+                rejected={rejected}
+                byPlatform={byPlatform}
+                onReload={load}
+              />
+            )}
+            {!loading && queue.length > 0 && (
+              <SwipeDeck
+                posts={queue}
+                onSwipe={handleSwipe}
+                reviewedCount={reviewed}
+                totalInSession={sessionTotal}
+              />
+            )}
+          </>
+        ) : (
+          <ApprovedView posts={approvedQueue} loading={approvedLoading} />
         )}
       </main>
     </div>

@@ -33,6 +33,10 @@ export async function fetchSourceAccounts(): Promise<SourceAccounts> {
   return request("/api/source-accounts");
 }
 
+export async function fetchApproved(): Promise<Post[]> {
+  return request("/api/scheduled");
+}
+
 export async function approvePost(postId: number): Promise<void> {
   await request("/api/review/approve", {
     method: "POST",

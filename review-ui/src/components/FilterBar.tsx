@@ -13,6 +13,8 @@ interface Props {
   scraping: boolean;
   onStartBeast: () => void;
   beastLoading: boolean;
+  tab: "pending" | "approved";
+  onTab: (tab: "pending" | "approved") => void;
 }
 
 export function FilterBar({
@@ -28,6 +30,8 @@ export function FilterBar({
   scraping,
   onStartBeast,
   beastLoading,
+  tab,
+  onTab,
 }: Props) {
   const authors = platform ? accounts[platform as keyof SourceAccounts] || [] : [];
 
@@ -76,7 +80,27 @@ export function FilterBar({
         </div>
       </div>
 
-      <div className="mb-2 flex flex-wrap gap-1.5">
+      <div className="mb-2 flex flex-wrap gap-1.5 items-center">
+        <div className="flex gap-1.5 mr-4 bg-black/20 p-1 rounded-full border border-border">
+          <button
+            type="button"
+            onClick={() => onTab("pending")}
+            className={`rounded-full px-3 py-1 text-xs font-semibold ${
+              tab === "pending" ? "bg-accent text-white" : "text-gray-400 hover:text-white"
+            }`}
+          >
+            Pending
+          </button>
+          <button
+            type="button"
+            onClick={() => onTab("approved")}
+            className={`rounded-full px-3 py-1 text-xs font-semibold ${
+              tab === "approved" ? "bg-accent text-white" : "text-gray-400 hover:text-white"
+            }`}
+          >
+            Approved
+          </button>
+        </div>
         {platforms.map((p) => (
           <button
             key={p.id || "all"}
