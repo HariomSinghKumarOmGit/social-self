@@ -52,7 +52,13 @@ def scrape_instagram() -> List[Dict[str, object]]:
                 "searchType": "user",
             }
             run = client.actor("apify/instagram-scraper").call(run_input=run_input)
-            dataset_id = run.get("defaultDatasetId")
+            if hasattr(run, "default_dataset_id"):
+                dataset_id = run.default_dataset_id
+            elif isinstance(run, dict):
+                dataset_id = run.get("defaultDatasetId") or run.get("default_dataset_id")
+            else:
+                dataset_id = getattr(run, "defaultDatasetId", None)
+                
             if not dataset_id:
                 logger.warning("No dataset returned for Instagram user %s", username)
                 continue

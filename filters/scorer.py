@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+from contextlib import closing
 from datetime import datetime, timezone
 from typing import Dict, List
 
@@ -22,16 +23,16 @@ def calculate_score(likes: int, comments: int, shares: int, views: int = 0) -> f
 def _update_post_score(post_id: int, score: float) -> None:
     """Persist score for a post in SQLite."""
     updated_at = datetime.now(timezone.utc).isoformat()
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute(
-            """
-            UPDATE posts
-            SET engagement_score = ?, updated_at = ?
-            WHERE id = ?
-            """,
-            (score, updated_at, post_id),
-        )
-        conn.commit()
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        with conn:
+            conn.execute(
+                """
+                UPDATE posts
+                SET engagement_score = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (score, updated_at, post_id),
+            )
 
 
 def score_pending_posts() -> int:

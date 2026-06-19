@@ -42,8 +42,8 @@ def _notify_telegram(message: str) -> None:
 
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
         requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": message}, timeout=15)
-    except Exception:
-        logger.exception("Failed to send Telegram notification.")
+    except Exception as e:
+        logger.warning("Failed to send Telegram notification: %s", repr(e))
 
 
 def run_cleanup_cycle(days: Optional[int] = None) -> int:
