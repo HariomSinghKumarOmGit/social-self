@@ -7,7 +7,7 @@ cmds = [
   "python3 -m venv /opt/venv",
   "/opt/venv/bin/python -m pip install --upgrade pip",
   "/opt/venv/bin/pip install -r requirements.txt",
-  "cd review-ui && npm ci",
+  "cd review-ui && npm install",
 ]
 
 [phases.build]
